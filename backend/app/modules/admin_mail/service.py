@@ -16,11 +16,12 @@ Three ideas hold the design together:
 from __future__ import annotations
 
 import asyncio
+import inspect
+import random
 import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import inspect
 
 from sqlalchemy import String, cast, func, select
 from sqlalchemy import update as sa_update
@@ -36,10 +37,12 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.models.admin_mail import (
     AdminMailbox,
+    AdminMailLog,
     AdminRequest,
     AdminRequestRecipient,
     DeliveryStatus,
     MailHealth,
+    MailLogKind,
 )
 from app.models.audit import AuditAction
 from app.models.notification import Notification
@@ -60,7 +63,7 @@ from app.modules.admin_mail.crypto import (
 from app.modules.admin_mail.email_templates import Brand, Signature
 from app.modules.notifications.service import notify
 from app.modules.permissions.service import PermissionService
-from app.repositories.admin_mail import AdminMailRepository, InboxStatus
+from app.repositories.admin_mail import AdminMailRepository, InboxStatus, MailLogStatusFilter
 from app.schemas.admin_mail import (
     AccountEmailResult,
     ContactAdminCreate,
@@ -71,6 +74,8 @@ from app.schemas.admin_mail import (
     MailboxRead,
     MailboxTestResult,
     MailboxUpdate,
+    MailLogCounts,
+    MailLogRead,
     MailSummary,
 )
 from app.schemas.pagination import Page
@@ -178,6 +183,42 @@ class AdminMailService:
         mailbox.health_status = outcome.health.value
         mailbox.health_checked_at = _now()
         mailbox.health_error = None if outcome.ok else outcome.error
+
+    @classmethod
+    def _apply_send_outcome(cls, mailbox: AdminMailbox, outcome: smtp.SmtpOutcome) -> None:
+        """Update mailbox health after a send attempt, without letting a bad
+        recipient address (e.g. 550 User unknown) poison a healthy mailbox."""
+        if not outcome.ok and outcome.recipient_error:
+            return
+        cls._apply(mailbox, outcome)
+
+    def _record_log(
+        self,
+        *,
+        kind: MailLogKind | str,
+        to_email: str,
+        subject: str,
+        ok: bool,
+        mailbox: AdminMailbox | None = None,
+        error_code: str | None = None,
+        error: str | None = None,
+        actor: User | None = None,
+    ) -> None:
+        effective_actor = actor if actor is not None else self.actor
+        self.repo.add(
+            AdminMailLog(
+                mailbox_id=mailbox.id if mailbox is not None else None,
+                from_email=mailbox.email if mailbox is not None else "",
+                to_email=to_email[:320],
+                subject=subject[:500],
+                kind=str(kind),
+                status="sent" if ok else "failed",
+                error_code=None if ok else (error_code[:32] if error_code else "error"),
+                error=None if ok else error,
+                actor_id=effective_actor.id if effective_actor is not None else None,
+                actor_username=effective_actor.username if effective_actor is not None else None,
+            )
+        )
 
     async def _verify(self, mailbox: AdminMailbox) -> smtp.SmtpOutcome:
         try:
@@ -489,8 +530,11 @@ class AdminMailService:
         incoming admin emails (`receive_admin_emails=False`) are still checked
         so they remain available in the outbound relay pool.
         """
+        healthcheck_fn = getattr(self.repo, "healthcheck_mailboxes", None)
         enabled_fn = getattr(self.repo, "enabled_mailboxes", None)
-        if inspect.iscoroutinefunction(enabled_fn):
+        if inspect.iscoroutinefunction(healthcheck_fn):
+            mailboxes = await healthcheck_fn()
+        elif inspect.iscoroutinefunction(enabled_fn):
             mailboxes = await enabled_fn()
         else:
             mailboxes = await self.repo.active_mailboxes()
@@ -679,20 +723,45 @@ class AdminMailService:
             recipient.delivery_error = None if outcome.ok else outcome.error
             # A send is as good a check as the hourly one, and shows the
             # banner now instead of up to an hour later.
-            self._apply(mailbox, outcome)
+            self._apply_send_outcome(mailbox, outcome)
+            self._record_log(
+                kind=MailLogKind.contact_request,
+                to_email=mailbox.email,
+                subject=subject,
+                ok=outcome.ok,
+                mailbox=mailbox,
+                error_code=outcome.health.value,
+                error=outcome.error,
+            )
             delivered += int(outcome.ok)
 
         if relay_admins and pool:
-            relay_box = secrets.choice(pool)
             for admin in relay_admins:
-                outcome = await deliver(relay_box, to=admin.email)
+                candidates = list(pool)
+                random.shuffle(candidates)
+                last_outcome: smtp.SmtpOutcome | None = None
+                for relay_box in candidates:
+                    outcome = await deliver(relay_box, to=admin.email)
+                    self._apply_send_outcome(relay_box, outcome)
+                    self._record_log(
+                        kind=MailLogKind.contact_request,
+                        to_email=admin.email,
+                        subject=subject,
+                        ok=outcome.ok,
+                        mailbox=relay_box,
+                        error_code=outcome.health.value,
+                        error=outcome.error,
+                    )
+                    last_outcome = outcome
+                    if outcome.ok or outcome.recipient_error:
+                        break
                 recipient = rows[admin.id]
+                ok = bool(last_outcome and last_outcome.ok)
                 recipient.delivery_status = (
-                    DeliveryStatus.sent.value if outcome.ok else DeliveryStatus.failed.value
+                    DeliveryStatus.sent.value if ok else DeliveryStatus.failed.value
                 )
-                recipient.delivery_error = None if outcome.ok else outcome.error
-                self._apply(relay_box, outcome)
-                delivered += int(outcome.ok)
+                recipient.delivery_error = None if ok else (last_outcome.error if last_outcome else None)
+                delivered += int(ok)
 
         await self.session.flush()
 
@@ -866,12 +935,29 @@ class AdminMailService:
         self,
         mailbox: AdminMailbox,
         *,
+        kind: MailLogKind | str = MailLogKind.account_created,
         subject: str,
         text: str,
         html: str,
         to: str,
         reply_to: str | None = None,
+        actor: User | None = None,
     ) -> AccountEmailResult:
+        self._last_deliver_recipient_error = False
+        if not is_deliverable_address(to):
+            self._last_deliver_recipient_error = True
+            reason = f"Recipient address '{to}' uses a non-routable or invalid domain."
+            self._record_log(
+                kind=kind,
+                to_email=to,
+                subject=subject,
+                ok=False,
+                mailbox=mailbox,
+                error_code="undeliverable",
+                error=reason,
+                actor=actor,
+            )
+            return AccountEmailResult(email_sent=False, email_error=reason)
         try:
             config = self._config(mailbox)
         except CredentialUnreadableError:
@@ -886,11 +972,53 @@ class AdminMailService:
                 reply_to=reply_to,
                 timeout_seconds=settings.mail_send_timeout_seconds,
             )
-        # A send is as good a health check as the hourly one.
-        self._apply(mailbox, outcome)
+        self._last_deliver_recipient_error = bool(not outcome.ok and outcome.recipient_error)
+        # A send is as good a health check as the hourly one, unless the
+        # failure was caused by a rejected recipient address.
+        self._apply_send_outcome(mailbox, outcome)
+        self._record_log(
+            kind=kind,
+            to_email=to,
+            subject=subject,
+            ok=outcome.ok,
+            mailbox=mailbox,
+            error_code=outcome.health.value,
+            error=outcome.error,
+            actor=actor,
+        )
         return AccountEmailResult(
             email_sent=outcome.ok, email_error=None if outcome.ok else outcome.error
         )
+
+    async def _deliver_with_pool_fallback(
+        self,
+        pool: list[AdminMailbox],
+        *,
+        kind: MailLogKind | str,
+        subject: str,
+        text: str,
+        html: str,
+        to: str,
+        reply_to: str | None = None,
+        actor: User | None = None,
+    ) -> AccountEmailResult:
+        candidates = list(pool)
+        random.shuffle(candidates)
+        last_result = AccountEmailResult(email_sent=False, email_error="No mailbox available.")
+        for mailbox in candidates:
+            last_result = await self._deliver(
+                mailbox,
+                kind=kind,
+                subject=subject,
+                text=text,
+                html=html,
+                to=to,
+                reply_to=reply_to,
+                actor=actor,
+            )
+            if last_result.email_sent or getattr(self, "_last_deliver_recipient_error", False):
+                return last_result
+        return last_result
 
     async def send_account_email(
         self, actor: User, *, to_user: User, password: str, created: bool, login_url: str | None
@@ -916,11 +1044,13 @@ class AdminMailService:
         )
         result = await self._deliver(
             mailbox,
+            kind=MailLogKind.account_created if created else MailLogKind.password_reset,
             subject=f"[{site_name}] {subject_line}",
             text=text,
             html=html,
             to=to_user.email,
             reply_to=self._actor_reply_to(actor, own=own),
+            actor=actor,
         )
         logger.info(
             "account_email_sent",
@@ -948,11 +1078,13 @@ class AdminMailService:
         )
         result = await self._deliver(
             mailbox,
+            kind=MailLogKind.admin_granted,
             subject=f"[{site_name}] You're now an administrator",
             text=text,
             html=html,
             to=to_user.email,
             reply_to=self._actor_reply_to(actor, own=own),
+            actor=actor,
         )
         logger.info(
             "admin_granted_email_sent",
@@ -1009,7 +1141,6 @@ class AdminMailService:
         if not pool:
             logger.info("issue_created_email_skipped", reason="no_working_mailbox")
             return 0
-        mailbox = secrets.choice(pool)
         effective = await SiteSettingsService(self.session).get_effective()
         brand = Brand.from_settings(
             effective.site_name,
@@ -1031,13 +1162,15 @@ class AdminMailService:
                 issue_url=public_link(f"/admin/issues?issue={issue_id}"),
             )
             try:
-                result = await self._deliver(
-                    mailbox,
+                result = await self._deliver_with_pool_fallback(
+                    pool,
+                    kind=MailLogKind.issue_created,
                     subject=f"[{effective.site_name}] New issue: {issue_title}",
                     text=text,
                     html=html,
                     to=target_email,
                     reply_to=reply_to,
+                    actor=reporter,
                 )
                 if result.email_sent:
                     sent += 1
@@ -1081,11 +1214,13 @@ class AdminMailService:
                 to_address = found[0].email
         result = await self._deliver(
             mailbox,
+            kind=MailLogKind.issue_closed,
             subject=f"[{site_name}] Your issue was closed: {issue_title}",
             text=text,
             html=html,
             to=to_address,
             reply_to=self._actor_reply_to(actor, own=own),
+            actor=actor,
         )
         logger.info(
             "issue_closed_email_sent",
@@ -1127,11 +1262,13 @@ class AdminMailService:
                 to_address = found[0].email
         result = await self._deliver(
             mailbox,
+            kind=MailLogKind.issue_assigned,
             subject=f"[{site_name}] Issue assigned to you: {issue_title}",
             text=text,
             html=html,
             to=to_address,
             reply_to=self._actor_reply_to(actor, own=own),
+            actor=actor,
         )
         logger.info(
             "issue_assigned_email_sent",
@@ -1170,11 +1307,13 @@ class AdminMailService:
         )
         result = await self._deliver(
             mailbox,
+            kind=MailLogKind.space_access,
             subject=f"[{site_name}] {subject_line}",
             text=text,
             html=html,
             reply_to=self._actor_reply_to(actor, own=own),
             to=to_user.email,
+            actor=actor,
         )
         logger.info(
             "space_access_email_sent",
@@ -1219,7 +1358,7 @@ class AdminMailService:
         # it is genuinely connected, falling back to "some pool mailbox will
         # do it instead" otherwise, so the frontend notice never claims a
         # broken mailbox of the account's own will be the one sending.
-        own_ok = mailbox.health_status == "ok"
+        own_ok = mailbox.health_status in ("ok", "unknown")
         return MailSummary(
             has_mailbox=receives,
             mailbox_id=mailbox.id if receives else None,
@@ -1369,6 +1508,42 @@ class AdminMailService:
                 Notification.link.in_(resolved_links),
             )
             .values(read_at=_now())
+        )
+
+    async def list_logs(
+        self,
+        *,
+        status: MailLogStatusFilter = "all",
+        kind: str | None = None,
+        mailbox_id: uuid.UUID | None = None,
+        q: str | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> Page[MailLogRead]:
+        rows, total = await self.repo.list_logs(
+            status=status,
+            kind=kind,
+            mailbox_id=mailbox_id,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
+        return Page.of(
+            [MailLogRead.model_validate(row) for row in rows],
+            total,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def log_counts(
+        self,
+        *,
+        kind: str | None = None,
+        mailbox_id: uuid.UUID | None = None,
+        q: str | None = None,
+    ) -> MailLogCounts:
+        return MailLogCounts(
+            **await self.repo.log_counts(kind=kind, mailbox_id=mailbox_id, q=q)
         )
 
     async def _clear_request_notification(self, user_id: uuid.UUID, request_id: uuid.UUID) -> None:

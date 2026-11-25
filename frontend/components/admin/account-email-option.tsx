@@ -107,7 +107,7 @@ export function AccountEmailNotice({ mode }: { mode: "created" | "reset" | "admi
   // automatically - see `_resolve_sender` on the backend. Which one that
   // will be is not known in advance, so it is never named here.
   const source =
-    summary.health_status === "ok"
+    summary.health_status === "ok" || summary.health_status === "unknown"
       ? `, from your mailbox (${summary.mailbox_email}).`
       : ", relayed through another administrator's connected mailbox.";
 

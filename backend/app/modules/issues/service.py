@@ -624,17 +624,20 @@ class IssueService:
         status: str | None = None,
         assignee_id: uuid.UUID | None = None,
         note: str | None = None,
-    ) -> tuple[list[IssueRead], list[tuple[uuid.UUID, str]], list[IssueRead]]:
+    ) -> tuple[list[IssueRead], list[tuple[uuid.UUID, str]], list[IssueRead], list[IssueRead]]:
         """Apply one change to many issues, one at a time under each issue's own
         rules, and report what did not go through instead of failing them all.
 
-        Returns the updated issues, ``(id, reason)`` for each one skipped, and the
-        ones this call just closed (so the caller can tell their reporters).
+        Returns the updated issues, ``(id, reason)`` for each one skipped, the
+        ones this call just closed (so the caller can tell their reporters), and
+        the ones whose assignee actually changed (so the caller can email only
+        newly assigned triagers).
         """
         await self.require_triager()
         updated: list[IssueRead] = []
         failed: list[tuple[uuid.UUID, str]] = []
         closed: list[IssueRead] = []
+        assigned: list[IssueRead] = []
         for issue_id in dict.fromkeys(ids):
             try:
                 if action == "status":
@@ -646,10 +649,14 @@ class IssueService:
                 elif action == "unassign":
                     updated.append(await self.assign(issue_id, None))
                 else:
-                    updated.append(await self.assign(issue_id, assignee_id))
+                    before_assignee = (await self._load(issue_id)).assignee_id
+                    result = await self.assign(issue_id, assignee_id)
+                    updated.append(result)
+                    if result.assignee is not None and before_assignee != result.assignee.id:
+                        assigned.append(result)
             except (PermissionDeniedError, ConflictError, NotFoundError, BadRequestError) as error:
                 failed.append((issue_id, error.code))
-        return updated, failed, closed
+        return updated, failed, closed, assigned
 
     async def add_note(self, issue_id: uuid.UUID, body: str) -> IssueRead:
         """An internal note: seen by issue managers, never by the reporter."""

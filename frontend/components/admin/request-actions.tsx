@@ -14,6 +14,11 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import {
+  AccountEmailNotice,
+  notifyAccountEmail,
+  useCanEmailAccounts,
+} from "@/components/admin/account-email-option";
 import { MailError } from "@/components/admin/mail-error";
 import { CreateUserDialog } from "@/components/admin/create-user-dialog";
 import { Button } from "@/components/ui/button";
@@ -478,6 +483,7 @@ function SetPasswordDialog({
   onDone: () => void;
 }) {
   const { t, apiErrorText } = useTranslation();
+  const canEmailAccounts = useCanEmailAccounts();
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -487,12 +493,25 @@ function SetPasswordDialog({
     if (password.length < MIN_PASSWORD_LENGTH || pending) return;
     setPending(true);
     setError(null);
+    const submittedPassword = password;
     try {
       await api.post(`/api/v1/users/${account.id}/password-reset`, {
-        new_password: password,
+        new_password: submittedPassword,
       });
       toast.success(richText(t("adminInbox.passwordSet", { username: account.username })));
       onDone();
+      if (canEmailAccounts) {
+        const outcome = await notifyAccountEmail("reset", account.id, submittedPassword);
+        if (outcome?.email_sent) {
+          toast.success(`New password emailed to ${account.email}.`);
+        } else {
+          toast.error(
+            outcome?.email_error
+              ? `Could not email the new password to ${account.email} (${outcome.email_error}). Share it another way.`
+              : `Could not email the new password to ${account.email}. Share it another way.`,
+          );
+        }
+      }
     } catch (err) {
       setError(apiErrorText(err, "adminInbox.actionError"));
     } finally {
@@ -538,6 +557,7 @@ function SetPasswordDialog({
             <p className="text-muted-foreground text-xs">
               {account.full_name || account.username} · {account.email}
             </p>
+            <AccountEmailNotice mode="reset" />
           </div>
 
           {error ? (

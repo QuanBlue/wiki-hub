@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { MailboxPanel } from "@/components/admin/mailbox-panel";
+import { MailDeliveryLogs } from "@/components/admin/mail-delivery-logs";
 import { listAdministrators, listMailboxes } from "@/lib/admin-mail";
 import { getCurrentUser } from "@/lib/auth";
 import { getServerLocale } from "@/lib/i18n/server";
@@ -65,6 +66,7 @@ export default async function AdminMailPage({
         currentUserId={me?.id ?? ""}
         currentUserIsProtected={me?.is_protected ?? false}
       />
+      <MailDeliveryLogs mailboxes={mailboxes} />
     </div>
   );
 }

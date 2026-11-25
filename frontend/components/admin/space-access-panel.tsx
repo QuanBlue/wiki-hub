@@ -312,6 +312,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
   }
 
   async function commitUserChanges(): Promise<void> {
+    const notifications: { user: User; added: boolean }[] = [];
     for (const user of users) {
       const draftSet = userDraft[user.id] ?? new Set<SpacePermission>();
       const committedSet = committedPermissions(assignments, "user", user.id);
@@ -325,27 +326,32 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
       const viewWas = committedSet.has("view");
       if (viewNow !== viewWas) {
         await applyUserPermission(user, "view", viewNow);
-        // View is the floor every other permission sits on (see
-        // `applyPermissionChange`), so gaining or losing it is exactly
-        // "added to" or "removed from" the space from this person's point of
-        // view - the signal worth emailing them about, not every individual
-        // checkbox. Not awaited: several people can change in one save, and
-        // nothing here should make that save wait on a mail round trip per
-        // person.
         if (canEmailAccounts) {
-          void notifySpaceAccess(user.id, space.key, viewNow).then((outcome) => {
-            if (outcome?.email_sent) {
-              toast.success(
-                viewNow
-                  ? `Told ${user.email} they now have access to "${space.name}".`
-                  : `Told ${user.email} their access to "${space.name}" was removed.`,
-              );
-            } else {
-              toast.error(`Could not email ${user.email} about this change.`);
-            }
-          });
+          notifications.push({ user, added: viewNow });
         }
       }
+    }
+    if (notifications.length > 0) {
+      // Send sequentially in the background so bulk access edits do not burst
+      // concurrent SMTP connections and hit provider rate limits.
+      void (async () => {
+        for (const { user, added } of notifications) {
+          const outcome = await notifySpaceAccess(user.id, space.key, added);
+          if (outcome?.email_sent) {
+            toast.success(
+              added
+                ? `Told ${user.email} they now have access to "${space.name}".`
+                : `Told ${user.email} their access to "${space.name}" was removed.`,
+            );
+          } else {
+            toast.error(
+              outcome?.email_error
+                ? `Could not email ${user.email} about this change: ${outcome.email_error}`
+                : `Could not email ${user.email} about this change.`,
+            );
+          }
+        }
+      })();
     }
   }
 

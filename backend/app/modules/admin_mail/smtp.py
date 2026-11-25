@@ -43,6 +43,10 @@ class SmtpOutcome:
     ok: bool
     health: MailHealth
     error: str | None = None
+    #: True when the SMTP server rejected the *recipient* (e.g. 550 User unknown)
+    #: rather than the sending mailbox itself. Callers must not mark the mailbox
+    #: unhealthy on a recipient error.
+    recipient_error: bool = False
 
     @classmethod
     def success(cls) -> SmtpOutcome:
@@ -79,6 +83,26 @@ def classify(exc: BaseException) -> SmtpOutcome:
         ),
     ):
         return SmtpOutcome(ok=False, health=MailHealth.unreachable, error=message)
+    if isinstance(
+        exc,
+        (
+            aiosmtplib.SMTPRecipientsRefused,
+            aiosmtplib.SMTPRecipientRefused,
+        ),
+    ):
+        return SmtpOutcome(
+            ok=False,
+            health=MailHealth.error,
+            error=message,
+            recipient_error=True,
+        )
+    if isinstance(exc, aiosmtplib.SMTPResponseException) and exc.code in (550, 551, 553):
+        return SmtpOutcome(
+            ok=False,
+            health=MailHealth.error,
+            error=message,
+            recipient_error=True,
+        )
     return SmtpOutcome(ok=False, health=MailHealth.error, error=message)
 
 

@@ -777,7 +777,9 @@ export function EditUserDialog({
           toast.success(`New password emailed to \`${user.email}\`.`);
         } else {
           toast.error(
-            `Could not email the new password to \`${user.email}\`. Share it another way.`,
+            outcome?.email_error
+              ? `Could not email the new password to \`${user.email}\` (${outcome.email_error}). Share it another way.`
+              : `Could not email the new password to \`${user.email}\`. Share it another way.`,
           );
         }
       }
@@ -786,7 +788,11 @@ export function EditUserDialog({
         if (outcome?.email_sent) {
           toast.success(`Told \`${user.email}\` they're now an administrator.`);
         } else {
-          toast.error(`Could not email \`${user.email}\` about the new role.`);
+          toast.error(
+            outcome?.email_error
+              ? `Could not email \`${user.email}\` about the new role: ${outcome.email_error}`
+              : `Could not email \`${user.email}\` about the new role.`,
+          );
         }
       }
     } catch (err) {

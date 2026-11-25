@@ -168,7 +168,11 @@ export function AddAdminDialog({
         if (outcome?.email_sent) {
           toast.success(`Told ${targetMember.email} they're now an administrator.`);
         } else {
-          toast.error(`Could not email ${targetMember.email} about the new role.`);
+          toast.error(
+            outcome?.email_error
+              ? `Could not email ${targetMember.email} about the new role: ${outcome.email_error}`
+              : `Could not email ${targetMember.email} about the new role.`,
+          );
         }
       }
     } catch (err) {
@@ -220,7 +224,9 @@ export function AddAdminDialog({
           toast.success(`Sign-in details emailed to ${created.email}.`);
         } else {
           toast.error(
-            `Could not email the sign-in details to ${created.email}. Share the password another way.`,
+            outcome?.email_error
+              ? `Could not email the sign-in details to ${created.email} (${outcome.email_error}). Share the password another way.`
+              : `Could not email the sign-in details to ${created.email}. Share the password another way.`,
           );
         }
       }
