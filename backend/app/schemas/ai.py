@@ -587,6 +587,13 @@ class ExecuteRequest(BaseModel):
     lang: str | None = Field(default=None, max_length=8)
 
 
+class AnswerUsage(BaseModel):
+    """Tokens the model read and wrote for one reply, as the gateway reported them."""
+
+    prompt_tokens: int
+    completion_tokens: int
+
+
 class AnswerResult(BaseModel):
     #: ``False`` when the wiki does not answer the question; the pages in ``related`` may help.
     found: bool
@@ -615,6 +622,8 @@ class AnswerResult(BaseModel):
     actions: list[AnswerAction] = []
     #: Steps the assistant proposes to carry out once the person confirms (``basis`` is ``plan``).
     plan: AnswerPlan | None = None
+    #: What a chat reply cost, every call it took together; ``None`` when not reported.
+    usage: AnswerUsage | None = None
 
 
 #: How much of a conversation goes to the model: the latest turns, each kept short.

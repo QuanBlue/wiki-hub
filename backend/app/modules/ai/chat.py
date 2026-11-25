@@ -91,6 +91,7 @@ from app.schemas.ai import (
     AnswerAction,
     AnswerResult,
     AnswerSource,
+    AnswerUsage,
     ChatMessage,
     ChatRequest,
     FileSource,
@@ -476,6 +477,13 @@ class _Pass:
     cut: bool = False
 
 
+def _plus(total: Usage | None, more: Usage | None) -> Usage | None:
+    """Two costs together; ``None`` only when neither was reported."""
+    if more is None:
+        return total
+    return more if total is None else total + more
+
+
 @dataclass
 class ChatTurn:
     """One question, ready to be answered: the pages are found, the quota is spent."""
@@ -497,6 +505,8 @@ class ChatTurn:
     #: goes back to the person). With the query for ``web`` and the text for ``ask``.
     route: str = "wiki"
     route_text: str = ""
+    #: Tokens spent on this question so far, by every call made for it.
+    used: Usage | None = None
     #: How well the wiki matched the question, and how many calls to the model this turn took.
     confidence: str = "none"
     calls: int = 0
@@ -648,6 +658,8 @@ class ChatTurn:
                 if trigger_mode in ("search", "weather"):
                     searched = await self._search(trigger_text, weather=trigger_mode == "weather")
                     if isinstance(searched, AnswerResult):
+                        if first.usage is not None:
+                            await self._record(first.usage)
                         yield await self._done(searched.reason, self._with_actions(searched))
                         return
                     query, results = searched
@@ -749,6 +761,11 @@ class ChatTurn:
         wiki's to answer; neither is noted unless nothing at all came back.
         """
         self._log(outcome, result)
+        if self.used is not None:
+            result.usage = AnswerUsage(
+                prompt_tokens=self.used.prompt_tokens,
+                completion_tokens=self.used.completion_tokens,
+            )
         if (
             self.session is not None
             and not self.scoped
@@ -807,6 +824,7 @@ class ChatTurn:
             reply=reply,
             titles=[source.title for source in self.sources],
         )
+        self.used = _plus(self.used, look.usage)
         if look.kind == "ask" and self.web.ready and self.session is not None:
             # "Which 9router do you mean?" - when the wiki never mentions the name at all, there
             # is nothing in it to choose between: the name is looked up instead.
@@ -892,6 +910,7 @@ class ChatTurn:
         return query, await read_pages(results, query)
 
     async def _record(self, usage: Usage) -> None:
+        self.used = _plus(self.used, usage)
         await record_ai_usage(
             user_id=self.user.id,
             feature="chat",
@@ -921,6 +940,9 @@ class ChatService:
     def __init__(self, session: AsyncSession, user: User) -> None:
         self.session = session
         self.user = user
+        #: Tokens spent before the reply starts: understanding the question, deciding where
+        #: to answer it.
+        self._spent: Usage | None = None
 
     async def begin(self, request: ChatRequest) -> ChatTurn:
         """Find the pages for the latest question and spend the quota, before any byte is sent."""
@@ -1049,6 +1071,7 @@ class ChatService:
                 standalone=query,
                 session=self.session,
                 scoped=scoped,
+                used=self._spent,
             )
 
         if not spent:
@@ -1118,6 +1141,7 @@ class ChatService:
             route_text=decided[1],
             confidence=context.confidence,
             calls=routed_calls,
+            used=self._spent,
             question=question,
             standalone=query,
             max_tokens=max(
@@ -1168,6 +1192,7 @@ class ChatService:
             standalone=query,
             titles=[source.title for source in sources],
         )
+        self._spent = _plus(self._spent, verdict.usage)
         calls = 1 if asked else 0
         if verdict.kind == "search":
             return ("web", verdict.text), calls
@@ -1201,6 +1226,7 @@ class ChatService:
         except (TimeoutError, ServiceUnavailableError):
             logger.info("ai_chat_rewrite_failed")
             return fallback
+        self._spent = _plus(self._spent, reply.usage)
         if reply.usage is not None:
             await record_ai_usage(
                 user_id=self.user.id,

@@ -467,6 +467,11 @@ export const sectionsEn: HelpSection[] = [
             the same way.
           </li>
           <li>
+            <strong>Tokens.</strong> The faint line at the end of an answer says how many tokens
+            the AI read (<em>in</em>) and wrote (<em>out</em>) for it, when the AI service reports
+            them.
+          </li>
+          <li>
             <strong>How much detail.</strong> Under the box, choose <Code>Brief</Code> (the answer
             and its key details in a few points), <Code>Balanced</Code> (a full answer with steps,
             values, reasons and conditions) or <Code>Detailed</Code> (a long write-up: background,
@@ -521,11 +526,12 @@ export const sectionsEn: HelpSection[] = [
           </li>
           <li>
             <strong>Several questions in a row.</strong> You need not wait for a reply: keep typing
-            and press <Kbd>Enter</Kbd> (or the queue button beside <Code>Stop</Code>). Up to 10
-            questions wait above the box and go one by one as the replies arrive, in their own chat
-            even if you open another. The <Code>×</Code> takes one out. After you press{" "}
-            <Code>Stop</Code>, after a failed reply or after reloading the page they are held until
-            you press <Code>Send now</Code>. Each one counts against your AI limit when it is sent.
+            and press <Kbd>Enter</Kbd>. While there are words in the box, the <Code>Stop</Code>{" "}
+            button is a send button; empty the box to stop the reply. Up to 10 questions wait above
+            the box and go one by one as the replies arrive, in their own chat even if you open
+            another. The <Code>×</Code> takes one out. After you press <Code>Stop</Code>, after a
+            failed reply or after reloading the page they are held until you press{" "}
+            <Code>Send now</Code>. Each one counts against your AI limit when it is sent.
           </li>
           <li>
             <strong>Where chats are kept.</strong> Only in this browser, for your account - not on

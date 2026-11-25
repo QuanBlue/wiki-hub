@@ -168,6 +168,28 @@ describe("the chat widget", () => {
     expect(await screen.findByText(/the administrators will see/)).toBeInTheDocument();
   });
 
+  it("counts the tokens under an answer, when the AI service reports them", async () => {
+    ai(true);
+    streamChat.mockResolvedValueOnce({
+      ...FOUND,
+      usage: { prompt_tokens: 3200, completion_tokens: 612 },
+    });
+    streamChat.mockResolvedValueOnce(FOUND);
+    const actor = userEvent.setup();
+    render(<Shell userId="u1" />);
+
+    const box = await openPanel(actor);
+    await actor.type(box, "billing address{Enter}");
+    expect(
+      await screen.findByText("3,812 tokens · 3,200 in · 612 out"),
+    ).toBeInTheDocument();
+
+    // Nothing is shown, and nothing made up, for a reply that came without a count.
+    await actor.type(box, "again{Enter}");
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText(/ tokens · /)).toHaveLength(1);
+  });
+
   it("offers no Not helpful under a question put back to the person", async () => {
     ai(true);
     streamChat.mockResolvedValue({ ...FOUND, sources: [], basis: "clarify", answer: "Which one?" });

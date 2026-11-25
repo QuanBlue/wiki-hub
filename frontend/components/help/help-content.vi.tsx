@@ -478,6 +478,10 @@ export const sectionsVi: HelpSection[] = [
             trong khung hoặc bấm dấu X.
           </li>
           <li>
+            <strong>Token.</strong> Dòng chữ mờ cuối câu trả lời cho biết AI đã đọc (<em>vào</em>)
+            và viết (<em>ra</em>) bao nhiêu token cho câu đó, khi dịch vụ AI có báo về.
+          </li>
+          <li>
             <strong>Mức chi tiết.</strong> Dưới ô nhập, chọn <Code>Ngắn gọn</Code> (câu trả lời kèm
             các chi tiết chính trong vài ý), <Code>Vừa phải</Code> (trả lời đầy đủ: các bước, giá
             trị, lý do và điều kiện) hoặc <Code>Chi tiết</Code> (bài dài: bối cảnh, từng bước, ví dụ,
@@ -519,11 +523,12 @@ export const sectionsVi: HelpSection[] = [
           </li>
           <li>
             <strong>Hỏi nhiều câu liên tiếp.</strong> Không cần đợi trả lời xong: cứ gõ tiếp và
-            bấm <Kbd>Enter</Kbd> (hoặc nút xếp hàng cạnh nút <Code>Dừng</Code>). Tối đa 10 câu chờ
-            phía trên ô nhập và lần lượt được gửi khi có câu trả lời, đúng trong đoạn chat của chúng
-            kể cả khi bạn mở đoạn khác. Dấu <Code>×</Code> bỏ một câu khỏi hàng. Sau khi bạn bấm{" "}
-            <Code>Dừng</Code>, khi câu trả lời bị lỗi hoặc sau khi tải lại trang, các câu được giữ
-            lại cho tới khi bạn bấm <Code>Gửi ngay</Code>. Mỗi câu tính vào hạn mức AI lúc được gửi.
+            bấm <Kbd>Enter</Kbd>. Khi ô nhập có chữ, nút <Code>Dừng</Code> trở thành nút gửi; xóa
+            trống ô nhập nếu muốn dừng câu trả lời. Tối đa 10 câu chờ phía trên ô nhập và lần lượt
+            được gửi khi có câu trả lời, đúng trong đoạn chat của chúng kể cả khi bạn mở đoạn khác.
+            Dấu <Code>×</Code> bỏ một câu khỏi hàng. Sau khi bạn bấm <Code>Dừng</Code>, khi câu trả
+            lời bị lỗi hoặc sau khi tải lại trang, các câu được giữ lại cho tới khi bạn bấm{" "}
+            <Code>Gửi ngay</Code>. Mỗi câu tính vào hạn mức AI lúc được gửi.
           </li>
           <li>
             <strong>Đoạn chat được lưu ở đâu.</strong> Chỉ trong trình duyệt này, theo tài khoản của

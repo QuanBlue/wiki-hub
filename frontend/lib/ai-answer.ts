@@ -58,6 +58,11 @@ export type AnswerPlanSkip = {
 
 export type AnswerPlan = { steps: AnswerPlanStep[]; skipped: AnswerPlanSkip[] };
 
+export type AnswerUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+};
+
 export type AnswerResult = {
   found: boolean;
   /** Markdown with ``[n]`` marks, each naming one of ``sources``. */
@@ -78,6 +83,8 @@ export type AnswerResult = {
   actions?: AnswerAction[];
   /** Steps to carry out once the person confirms (basis is "plan"). */
   plan?: AnswerPlan | null;
+  /** What a chat reply cost, when the AI service reports it. */
+  usage?: AnswerUsage | null;
 };
 
 /**
