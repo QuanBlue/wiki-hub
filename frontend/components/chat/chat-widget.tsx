@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChevronDown,
   Activity,
   ArrowDown,
   ArrowRight,
@@ -39,6 +40,8 @@ import {
   RotateCw,
   SendHorizontal,
   Sparkles,
+  PanelLeftClose,
+  PanelLeftOpen,
   SquarePen,
   Download,
   Square,
@@ -56,8 +59,17 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 
-import { useChat } from "@/components/chat/use-chat";
+import {
+  ChatThreadList,
+  ChatThreadRail,
+  ThreadNameInput,
+} from "@/components/chat/chat-thread-list";
+import { useChatBox } from "@/components/chat/use-chat-box";
+import { useChat, type FirstAnswer } from "@/components/chat/use-chat";
+import { useChatThreads } from "@/components/chat/use-chat-threads";
+import { useChatVault } from "@/components/chat/use-chat-vault";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
 import { AnswerFeedback } from "@/components/chat/answer-feedback";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
@@ -67,7 +79,13 @@ import {
   SourceRow,
 } from "@/components/layout/answer-sources";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { aiStatus } from "@/lib/ai-summary";
 import {
   citeLinks,
@@ -78,6 +96,8 @@ import {
   type WebSource,
 } from "@/lib/ai-answer";
 import {
+  keepChatsInMemory,
+  nameThread,
   CHAT_DETAILS,
   CHAT_FILE_TYPES,
   CHAT_MAX_CHARS,
@@ -86,8 +106,7 @@ import {
   CHAT_TOGGLE_EVENT,
   ChatFileError,
   conversationFiles,
-  loadAttached,
-  saveAttached,
+  NEW_BOX,
   uploadChatFile,
   type AttachedFile,
   type ChatEntry,
@@ -96,10 +115,10 @@ import {
   type PlanState,
   type ChatFailure,
   type ChatOpenDetail,
-  type ChatFile,
   readDetail,
   saveDetail,
 } from "@/lib/ai-chat";
+import { CHAT_DROPPED_EVENT, loadThread } from "@/lib/ai-chat-store";
 import {
   chatToMarkdown,
   downloadMarkdown,
@@ -110,19 +129,40 @@ import { cn } from "@/lib/utils";
 
 type Assistant = Extract<ChatEntry, { role: "assistant" }>;
 
-const DEFAULT_WIDTH = 416;
+/** Room for the list of threads and a comfortable conversation beside it. */
+const DEFAULT_WIDTH = 800;
+/** The defaults before: kept by every browser that opened the chat, though nobody chose them. */
+const FORMER_DEFAULT_WIDTHS = [416, 760];
 const MIN_WIDTH = 320;
 const WIDTH_KEY = "wikihub:chat-width";
 /** Every page draws its own shell, so going to another page builds the panel again: this is how
  * it comes back open, as it was, until the person clicks outside it or closes it. */
 const OPEN_KEY = "wikihub:chat-open";
+/** Whether the list of threads is shown beside a wide panel; a narrow one draws it on demand. */
+const THREADS_KEY = "wikihub:chat-threads-shown";
+/** From this width the list of threads sits beside the conversation instead of over it. */
+const THREADS_INLINE_WIDTH = 640;
+/** How many removed threads the note about a full storage names. */
+const DROPPED_NAMED = 3;
+/** How many threads the name in a narrow panel's header offers to switch to. */
+const QUICK_THREADS = 5;
+
+function readThreadsShown(): boolean {
+  try {
+    return window.localStorage.getItem(THREADS_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 /** Within this of the page's width counts as "the whole width". */
 const FULL_SLACK = 24;
 
 function readWidth(): number {
   try {
     const stored = Number(window.localStorage.getItem(WIDTH_KEY));
-    return Number.isFinite(stored) && stored >= MIN_WIDTH
+    return Number.isFinite(stored) &&
+      stored >= MIN_WIDTH &&
+      !FORMER_DEFAULT_WIDTHS.includes(stored)
       ? stored
       : DEFAULT_WIDTH;
   } catch {
@@ -161,15 +201,6 @@ const FILE_ERROR_KEY: Record<string, string> = {
   chat_file_too_large: "chat.fileTooLarge",
   rate_limited: "search.answerRateLimited",
   unavailable: "search.answerUnavailable",
-};
-
-/** A file in the chat box: being read, ready to be asked about, or refused with a reason. */
-type FileChip = {
-  key: string;
-  filename: string;
-  status: "reading" | "ready" | "failed";
-  id?: string;
-  error?: string;
 };
 
 /** The name of a text file made from words pasted into the box: "pasted-text-0930.txt". */
@@ -1042,14 +1073,51 @@ const DETAIL_KEYS: Record<ChatDetail, string> = {
   detailed: "Detailed",
 };
 
+/** Marks how far the thread has been summarised; opens to show what is remembered. */
+function CompactNote({ summary, count }: { summary: string; count: number }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-6">
+      <div className="flex items-center gap-2">
+        <span className="bg-border h-px flex-1" aria-hidden />
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
+        >
+          <ChevronRight
+            className={cn("size-3 transition-transform", open && "rotate-90")}
+            aria-hidden
+          />
+          {t("chat.compacted", { count })}
+        </button>
+        <span className="bg-border h-px flex-1" aria-hidden />
+      </div>
+      {open ? (
+        <p className="border-border bg-surface-sunken text-muted-foreground mt-2 rounded-md border px-3 py-2 text-xs whitespace-pre-wrap">
+          {summary}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ChatPanel({
   userId,
+  persist = true,
+  wide = false,
   onClose,
   expanded,
   onToggleExpanded,
   adoptRef,
 }: {
   userId: string;
+  /** False while an administrator views as someone else: nothing is kept in the browser. */
+  persist?: boolean;
+  /** Room for the list of threads beside the conversation. */
+  wide?: boolean;
   onClose: () => void;
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -1057,23 +1125,57 @@ function ChatPanel({
 }) {
   const { t, locale } = useTranslation();
   const router = useRouter();
+  const threadsApi = useChatThreads(userId, persist);
+  const { startNew, nameByAssistant } = threadsApi;
+  // A thread is named after its first answer; until then (or when that fails) it is called by
+  // its first question.
+  const onFirstAnswer = useCallback(
+    ({ threadId, question, answer }: FirstAnswer) => {
+      nameThread(question, answer).then(
+        (title) => nameByAssistant(threadId, title),
+        () => undefined,
+      );
+    },
+    [nameByAssistant],
+  );
+  // Beside a wide panel the list stays as it was left; over a narrow one it opens on demand.
+  const [threadsShown, setThreadsShown] = useState(readThreadsShown);
+  const [drawer, setDrawer] = useState(false);
+  const listVisible = wide ? threadsShown : drawer;
+  // The list was opened to search it (from the strip of icons).
+  const [toSearch, setToSearch] = useState(false);
+  const showThreads = (next: boolean) => {
+    setThreadsShown(next);
+    try {
+      window.localStorage.setItem(THREADS_KEY, next ? "1" : "0");
+    } catch {
+      // not kept
+    }
+  };
+  // The name in the header being changed: of which thread.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // The turn a search found, to scroll to once its thread is shown.
+  const [focusEntry, setFocusEntry] = useState<string | null>(null);
   // How long and thorough the answers are; read once, like the width (the panel is drawn only
   // after the AI status is known, long after hydration).
   const [detail, setDetail] = useState<ChatDetail>(readDetail);
-  // The attached file questions are asked about, like a notebook with one source; none asks
-  // the whole wiki.
-  const [file, setFile] = useState<ChatFile | null>(null);
-  // Files attached from the person's computer, read together with the wiki. The ready ones are
-  // remembered with the conversation in this browser; the server keeps their words for a day.
-  // Read once, like the width: the panel is drawn only long after hydration.
-  const [chips, setChips] = useState<FileChip[]>(() =>
-    loadAttached(userId).map((kept) => ({
-      key: kept.id,
-      filename: kept.filename,
-      status: "ready" as const,
-      id: kept.id,
-    })),
-  );
+  // What waits in this thread's box. A chat not asked anything yet has the new chat's box.
+  const boxId = threadsApi.active ? threadsApi.activeId : NEW_BOX;
+  const {
+    draft,
+    // Files attached from the person's computer, read together with the wiki. The server
+    // keeps their words for a day.
+    chips,
+    // The attached file questions are asked about, like a notebook with one source; none
+    // asks the whole wiki.
+    scope: file,
+    setDraft,
+    setChips,
+    setScope: setFile,
+    started: startBox,
+    drop: dropBox,
+  } = useChatBox(userId, boxId, threadsApi.ready);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readyFiles = useMemo<AttachedFile[]>(
@@ -1085,14 +1187,14 @@ function ChatPanel({
       ),
     [chips],
   );
-  useEffect(() => {
-    saveAttached(userId, readyFiles);
-  }, [userId, readyFiles]);
   const {
     entries,
     slots,
-    loaded,
+    compact,
+    loaded: threadLoaded,
     busy,
+    running,
+    unread,
     send,
     edit,
     switchVersion,
@@ -1101,9 +1203,16 @@ function ChatPanel({
     regenerate,
     runPlan,
     cancelPlan,
-    clear,
+    forget,
     adopt,
-  } = useChat(userId, detail, file?.id ?? null);
+  } = useChat(
+    userId,
+    detail,
+    file?.id ?? null,
+    threadsApi.activeId,
+    onFirstAnswer,
+  );
+  const loaded = threadLoaded && threadsApi.ready;
   // Files already sent in this conversation: every question reads them again.
   const sentFiles = useMemo(
     () => conversationFiles(entries).filter((sent) => !sent.expired),
@@ -1122,43 +1231,46 @@ function ChatPanel({
         filename: one.name,
         status: "reading" as const,
       }));
-      setChips((current) => [...current, ...added]);
+      const into = boxId;
+      setChips((current) => [...current, ...added], into);
       added.forEach((chip, index) => {
         uploadChatFile(taken[index]).then(
           (read) =>
-            setChips((current) =>
-              current.map((c) =>
-                c.key === chip.key
-                  ? {
-                      ...c,
-                      status: "ready",
-                      id: read.id,
-                      filename: read.filename,
-                    }
-                  : c,
-              ),
+            setChips(
+              (current) =>
+                current.map((c) =>
+                  c.key === chip.key
+                    ? {
+                        ...c,
+                        status: "ready",
+                        id: read.id,
+                        filename: read.filename,
+                      }
+                    : c,
+                ),
+              into,
             ),
           (error: unknown) => {
             const code = error instanceof ChatFileError ? error.code : "error";
-            setChips((current) =>
-              current.map((c) =>
-                c.key === chip.key
-                  ? {
-                      ...c,
-                      status: "failed",
-                      error: t(FILE_ERROR_KEY[code] ?? "chat.fileFailed"),
-                    }
-                  : c,
-              ),
+            setChips(
+              (current) =>
+                current.map((c) =>
+                  c.key === chip.key
+                    ? {
+                        ...c,
+                        status: "failed",
+                        error: t(FILE_ERROR_KEY[code] ?? "chat.fileFailed"),
+                      }
+                    : c,
+                ),
+              into,
             );
           },
         );
       });
     },
-    [roomForFiles, t],
+    [boxId, roomForFiles, setChips, t],
   );
-  const [draft, setDraft] = useState("");
-  const [confirmClear, setConfirmClear] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickRef = useRef(true);
@@ -1183,8 +1295,9 @@ function ChatPanel({
 
   useEffect(() => {
     adoptRef.current = (detail) => {
+      // A question answered in the search box carries on in a chat of its own.
       if (detail.question && detail.result)
-        adopt(detail.question, detail.result);
+        adopt(detail.question, detail.result, startNew());
       if (detail.file) {
         setFile(detail.file);
         inputRef.current?.focus();
@@ -1193,7 +1306,7 @@ function ChatPanel({
     return () => {
       adoptRef.current = null;
     };
-  }, [adopt, adoptRef]);
+  }, [adopt, adoptRef, setFile, startNew]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1220,6 +1333,59 @@ function ChatPanel({
     const list = listRef.current;
     if (list && stickRef.current) list.scrollTop = list.scrollHeight;
   }, [entries]);
+
+  // A turn found by searching the threads: brought into view and marked for a moment.
+  useEffect(() => {
+    if (!focusEntry) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-entry="${CSS.escape(focusEntry)}"]`,
+    );
+    if (!el) return;
+    setFocusEntry(null);
+    stickRef.current = false;
+    setAway(true);
+    el.scrollIntoView?.({ block: "center" });
+    el.dataset.found = "true";
+    window.setTimeout(() => delete el.dataset.found, 1600);
+  }, [focusEntry, entries]);
+
+  const newChat = useCallback(() => {
+    startNew();
+    browsing.current = null;
+    setDrawer(false);
+    stickRef.current = true;
+    setAway(false);
+    inputRef.current?.focus();
+  }, [startNew]);
+
+  const openThread = useCallback(
+    (id: string, entryId?: string) => {
+      threadsApi.select(id);
+      setDrawer(false);
+      stickRef.current = !entryId;
+      browsing.current = null;
+      setAway(false);
+      setFocusEntry(entryId ?? null);
+    },
+    [threadsApi],
+  );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "o" &&
+        panelRef.current?.contains(document.activeElement)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        newChat();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [newChat]);
 
   // The box grows with what is typed, up to a few lines.
   useEffect(() => {
@@ -1249,13 +1415,33 @@ function ChatPanel({
       if (!text.trim() || busy || reading) return;
       stickRef.current = true;
       browsing.current = null;
-      setDraft("");
       // The files in the box go with the question and show on it; the box is empty again.
       const withFiles = file ? [] : readyFiles;
-      if (!file) setChips([]);
+      if (boxId === NEW_BOX) {
+        // The chat gets a place in the list with this question: its box goes with it.
+        startBox(threadsApi.activeId, {
+          chips: file ? chips : [],
+          scope: file,
+        });
+      } else {
+        setDraft("");
+        if (!file) setChips(() => []);
+      }
       void send(text, undefined, withFiles);
     },
-    [busy, file, readyFiles, reading, send],
+    [
+      boxId,
+      busy,
+      chips,
+      file,
+      readyFiles,
+      reading,
+      send,
+      setChips,
+      setDraft,
+      startBox,
+      threadsApi.activeId,
+    ],
   );
 
   const onStop = (event: React.MouseEvent) => {
@@ -1266,560 +1452,752 @@ function ChatPanel({
     inputRef.current?.focus();
   };
 
+  const exportEntries = (list: ChatEntry[]) =>
+    downloadMarkdown(
+      chatToMarkdown(
+        list,
+        {
+          title: t("chat.exportTitle"),
+          exportedAt: t("chat.exportedAt"),
+          question: t("chat.exportQuestion"),
+          answer: t("chat.exportAnswer"),
+          sources: t("chat.exportSources"),
+          alsoRead: t("search.answerRelated"),
+          web: t("chat.exportWeb"),
+          files: t("chat.exportFiles"),
+          attached: t("chat.fileSources"),
+          notFound: t("chat.exportNotFound"),
+          failed: t("chat.exportFailed"),
+          stopped: t("chat.exportStopped"),
+          basis: (basis) => t(`chat.exportBasis_${basis}`),
+        },
+        { origin: window.location.origin },
+      ),
+      exportFileName(),
+    );
+
+  // Old threads removed to make room are said, not lost without a word.
+  useEffect(() => {
+    const onDropped = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ userId: string; titles: string[] }>
+      ).detail;
+      if (detail?.userId !== userId) return;
+      toast.warning(t("chat.threadsDropped", { count: detail.titles.length }), {
+        id: "wikihub-chat-dropped",
+        description: detail.titles
+          .slice(0, DROPPED_NAMED)
+          .map((title) => `“${title}”`)
+          .join(", ")
+          .concat(detail.titles.length > DROPPED_NAMED ? ", …" : ""),
+      });
+    };
+    window.addEventListener(CHAT_DROPPED_EVENT, onDropped);
+    return () => window.removeEventListener(CHAT_DROPPED_EVENT, onDropped);
+  }, [userId, t]);
+
   const examples = file
     ? [t("chat.fileExample1"), t("chat.fileExample2"), t("chat.fileExample3")]
     : [t("chat.example1"), t("chat.example2"), t("chat.example3")];
   const last = entries[entries.length - 1];
 
+  const threadList = listVisible ? (
+    <ChatThreadList
+      userId={userId}
+      threads={threadsApi.threads}
+      activeId={threadsApi.activeId}
+      running={running}
+      unread={unread}
+      onSelect={openThread}
+      onNew={newChat}
+      onAsk={(question) => {
+        const id = startNew();
+        setDrawer(false);
+        void send(question, undefined, [], id);
+      }}
+      onRename={threadsApi.rename}
+      onTogglePin={threadsApi.togglePin}
+      onExport={(id) =>
+        // A reply still being written is not part of what is exported.
+        exportEntries(
+          id === threadsApi.activeId && !busy
+            ? entries
+            : loadThread(userId, id).entries,
+        )
+      }
+      onDelete={(id) => {
+        forget(id);
+        dropBox(id);
+        threadsApi.remove(id);
+      }}
+      overlay={!wide}
+      onClose={wide ? undefined : () => setDrawer(false)}
+      onCollapse={
+        wide
+          ? () => {
+              setToSearch(false);
+              showThreads(false);
+            }
+          : undefined
+      }
+      focusSearch={toSearch}
+    />
+  ) : wide ? (
+    <ChatThreadRail
+      unread={unread.length > 0}
+      onExpand={() => {
+        setToSearch(false);
+        showThreads(true);
+      }}
+      onNew={newChat}
+      onSearch={() => {
+        setToSearch(true);
+        showThreads(true);
+      }}
+    />
+  ) : null;
+
   return (
     <div
-      className="relative flex min-h-0 flex-1 flex-col"
-      // Files dragged anywhere onto the panel are attached when let go, as with the paper clip.
-      onDragOver={(event) => {
-        if (file || !event.dataTransfer.types.includes("Files")) return;
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setDragging(false);
-        }
-      }}
-      onDrop={(event) => {
-        if (file || !event.dataTransfer.files.length) return;
-        event.preventDefault();
-        setDragging(false);
-        attach(Array.from(event.dataTransfer.files));
-        inputRef.current?.focus();
-      }}
+      ref={panelRef}
+      data-chat-panel=""
+      className="relative flex min-h-0 flex-1"
     >
-      {dragging ? <DropOverlay full={roomForFiles <= 0} /> : null}
-      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <Sparkles className="text-primary size-4" aria-hidden />
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {t("chat.title")}
-        </h2>
-        <Button
-          variant="subtle"
-          size="icon"
-          disabled={entries.length === 0 || busy}
-          onClick={() =>
-            downloadMarkdown(
-              chatToMarkdown(
-                entries,
-                {
-                  title: t("chat.exportTitle"),
-                  exportedAt: t("chat.exportedAt"),
-                  question: t("chat.exportQuestion"),
-                  answer: t("chat.exportAnswer"),
-                  sources: t("chat.exportSources"),
-                  alsoRead: t("search.answerRelated"),
-                  web: t("chat.exportWeb"),
-                  files: t("chat.exportFiles"),
-                  attached: t("chat.fileSources"),
-                  notFound: t("chat.exportNotFound"),
-                  failed: t("chat.exportFailed"),
-                  stopped: t("chat.exportStopped"),
-                  basis: (basis) => t(`chat.exportBasis_${basis}`),
-                },
-                { origin: window.location.origin },
-              ),
-              exportFileName(),
-            )
-          }
-          aria-label={t("chat.export")}
-          title={t("chat.export")}
-        >
-          <Download className="size-4" aria-hidden />
-        </Button>
-        <Button
-          variant="subtle"
-          size="sm"
-          disabled={entries.length === 0}
-          onClick={() => setConfirmClear(true)}
-        >
-          <SquarePen aria-hidden />
-          {t("chat.newChat")}
-        </Button>
-        <Button
-          variant="subtle"
-          size="icon"
-          onClick={onToggleExpanded}
-          aria-label={expanded ? t("chat.collapse") : t("chat.expand")}
-          title={expanded ? t("chat.collapse") : t("chat.expand")}
-          aria-pressed={expanded}
-          className="hidden sm:inline-flex"
-        >
-          {expanded ? (
-            <Minimize2 className="size-4" aria-hidden />
-          ) : (
-            <Maximize2 className="size-4" aria-hidden />
-          )}
-        </Button>
-        <Button
-          variant="subtle"
-          size="icon"
-          onClick={onClose}
-          aria-label={t("chat.close")}
-        >
-          <X className="size-4" aria-hidden />
-        </Button>
-      </header>
-
-      <div
-        ref={listRef}
-        role="log"
-        aria-live="polite"
-        aria-label={t("chat.title")}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          stickRef.current =
-            el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-          setAway(!stickRef.current);
-        }}
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-4 py-5",
-          // A comfortable reading column; wider when the panel is expanded, so a wide table or
-          // a long answer uses the room it was given.
-          expanded
-            ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
-            : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
-        )}
-      >
-        {loaded && entries.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
-            <span className="bg-primary-subtle text-primary flex size-10 items-center justify-center rounded-full">
-              <Sparkles className="size-5" aria-hidden />
-            </span>
-            <p className="text-sm font-semibold">{t("chat.emptyTitle")}</p>
-            <p className="text-muted-foreground text-xs">
-              {t("chat.emptyHint")}
-            </p>
-            <div className="flex w-full flex-col gap-1.5">
-              {examples.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => submit(example)}
-                  className="border-border text-foreground hover:bg-surface-hover hover:border-border-strong focus-visible:ring-ring cursor-pointer rounded-lg border px-3 py-2 text-left text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <SelectionAssistant
-            endpoint="/api/v1/ai/explain"
-            className="space-y-6"
-          >
-            {entries.map((entry, index) => (
-              <Message
-                key={entry.id}
-                entry={entry}
-                question={questionBefore(entries, index)}
-                onOpen={open}
-                onRunPlan={(id) =>
-                  void runPlan(id, locale).then(() => router.refresh())
-                }
-                onCancelPlan={cancelPlan}
-                onRetry={retry}
-                canRetry={entry === last && !busy}
-                busy={busy}
-                onEdit={edit}
-                onRegenerate={regenerate}
-                versions={versionsOf(entry, slots)}
-                onSwitch={(delta) => {
-                  if (entry.role !== "user" || !entry.slot) return;
-                  const list = listRef.current;
-                  const el = list?.querySelector<HTMLElement>(
-                    `[data-slot="${CSS.escape(entry.slot)}"]`,
-                  );
-                  if (list && el) {
-                    anchorRef.current = {
-                      slot: entry.slot,
-                      top:
-                        el.getBoundingClientRect().top -
-                        list.getBoundingClientRect().top,
-                    };
-                    // Not following the end of the conversation while looking at another version.
-                    stickRef.current = false;
-                    setAway(true);
-                  }
-                  switchVersion(entry.slot, delta);
-                }}
-              />
-            ))}
-          </SelectionAssistant>
-        )}
-      </div>
-
-      <div
-        className={cn(
-          "relative shrink-0 px-4 pt-1 pb-3",
-          // A comfortable reading column; wider when the panel is expanded, so a wide table or
-          // a long answer uses the room it was given.
-          expanded
-            ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
-            : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
-        )}
-      >
-        {away ? (
-          <button
-            type="button"
-            onClick={() => {
-              const list = listRef.current;
-              stickRef.current = true;
-              setAway(false);
-              list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
-            }}
-            aria-label={t("chat.scrollDown")}
-            title={t("chat.scrollDown")}
-            className="border-border bg-surface text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute -top-11 left-1/2 flex size-8 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border shadow-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-          >
-            <ArrowDown className="size-4" aria-hidden />
-          </button>
-        ) : null}
-        {file ? (
-          <div className="mb-2 flex items-center gap-2 px-1">
-            <span
-              className="border-primary/40 bg-primary-subtle text-primary inline-flex min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium"
-              title={t("chat.fileScopeHint")}
-            >
-              <Paperclip className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">
-                {t("chat.fileScope", { file: file.filename })}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  inputRef.current?.focus();
-                }}
-                aria-label={t("chat.fileScopeClear")}
-                title={t("chat.fileScopeClear")}
-                className="hover:bg-primary/15 active:bg-primary/25 focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-              >
-                <X className="size-3" aria-hidden />
-              </button>
-            </span>
-          </div>
-        ) : null}
-        {!file && chips.length ? (
-          <ul
-            aria-label={t("chat.attachedFiles")}
-            className="mb-2 flex flex-wrap items-start gap-1.5 px-1"
-          >
-            {chips.map((chip) => (
-              <li key={chip.key} className="max-w-full min-w-0">
-                <span
-                  title={chip.error ?? chip.filename}
-                  className={cn(
-                    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium",
-                    chip.status === "failed"
-                      ? "border-danger/40 bg-danger-bg text-danger"
-                      : "border-border bg-surface-sunken text-foreground",
-                  )}
-                >
-                  {chip.status === "reading" ? (
-                    <Loader2
-                      className="text-primary size-3.5 shrink-0 animate-spin"
-                      aria-hidden
-                    />
-                  ) : chip.status === "failed" ? (
-                    <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-                  ) : (
-                    <FileText
-                      className="text-muted-foreground size-3.5 shrink-0"
-                      aria-hidden
-                    />
-                  )}
-                  <span className="truncate">{chip.filename}</span>
-                  {chip.status === "reading" ? (
-                    <span className="text-muted-foreground shrink-0">
-                      {t("chat.fileReading")}
-                    </span>
-                  ) : null}
-                  {chip.status === "failed" && chip.error ? (
-                    <span className="sr-only">{chip.error}</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChips((current) =>
-                        current.filter((c) => c.key !== chip.key),
-                      );
-                      inputRef.current?.focus();
-                    }}
-                    aria-label={t("chat.fileRemove", { file: chip.filename })}
-                    title={t("chat.fileRemove", { file: chip.filename })}
-                    className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    <X className="size-3" aria-hidden />
-                  </button>
-                </span>
-                {chip.status === "failed" && chip.error ? (
-                  <p
-                    className="text-danger mt-0.5 px-2.5 text-[11px]"
-                    aria-hidden
-                  >
-                    {chip.error}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(draft);
-          }}
-          className={cn(
-            "border-border bg-surface focus-within:border-border-strong flex items-end gap-2 rounded-3xl border py-1.5 pr-1.5 pl-1.5 shadow-sm transition-shadow duration-150 focus-within:shadow-md",
-          )}
-        >
-          {file ? (
-            <span className="w-1.5 shrink-0" aria-hidden />
-          ) : (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                accept={CHAT_FILE_TYPES}
-                onChange={(event) => {
-                  attach(Array.from(event.target.files ?? []));
-                  // The same file can be picked again after it was removed.
-                  event.target.value = "";
-                  inputRef.current?.focus();
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={roomForFiles <= 0}
-                onClick={() => fileInputRef.current?.click()}
-                aria-label={
-                  roomForFiles <= 0
-                    ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
-                    : t("chat.attach")
-                }
-                title={
-                  roomForFiles <= 0
-                    ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
-                    : t("chat.attach")
-                }
-                className="text-muted-foreground hover:text-foreground size-9 shrink-0 rounded-full"
-              >
-                <Paperclip className="size-4" aria-hidden />
-              </Button>
-            </>
-          )}
-          <textarea
-            ref={inputRef}
-            value={draft}
-            rows={1}
-            maxLength={CHAT_MAX_CHARS}
-            onChange={(event) => {
-              browsing.current = null;
-              setDraft(event.target.value);
-            }}
-            onPaste={(event) => {
-              if (file) return;
-              // A file copied from the computer is attached.
-              const pasted = Array.from(event.clipboardData.files);
-              if (pasted.length) {
-                event.preventDefault();
-                attach(pasted);
-                return;
-              }
-              // Words too many for the box would be cut off at its limit: they go in as a
-              // text file instead, read whole, and the box stays free for the question.
-              const words = event.clipboardData.getData("text/plain");
-              const box = event.currentTarget;
-              const kept =
-                draft.length - (box.selectionEnd - box.selectionStart);
-              if (kept + words.length <= CHAT_MAX_CHARS || roomForFiles <= 0) {
-                return;
-              }
-              event.preventDefault();
-              attach([new File([words], pastedName(), { type: "text/plain" })]);
-            }}
-            onKeyDown={(event) => {
-              // Up and Down walk through the questions asked before, as in a terminal.
-              if (
-                (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-                !event.shiftKey &&
-                !event.altKey &&
-                !event.ctrlKey &&
-                !event.metaKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                const box = event.currentTarget;
-                const up = event.key === "ArrowUp";
-                // Only when the caret has nowhere further to go in the text: in a question of
-                // several lines the arrows still move between its lines.
-                const onFirstLine = !box.value
-                  .slice(0, box.selectionStart)
-                  .includes("\n");
-                const onLastLine = !box.value
-                  .slice(box.selectionEnd)
-                  .includes("\n");
-                if (up ? !onFirstLine : !onLastLine) return;
-                const at = browsing.current;
-                if (up) {
-                  const next = at ? at.index - 1 : asked.length - 1;
-                  if (next < 0) {
-                    // The oldest one is already shown (or there is none): nothing to jump to.
-                    if (at) event.preventDefault();
-                    return;
-                  }
-                  event.preventDefault();
-                  browsing.current = {
-                    index: next,
-                    saved: at ? at.saved : draft,
-                  };
-                  caretToEnd.current = true;
-                  setDraft(asked[next]);
-                } else if (at) {
-                  event.preventDefault();
-                  caretToEnd.current = true;
-                  if (at.index + 1 >= asked.length) {
-                    // Past the newest: back to what was being typed.
-                    browsing.current = null;
-                    setDraft(at.saved);
-                  } else {
-                    browsing.current = { index: at.index + 1, saved: at.saved };
-                    setDraft(asked[at.index + 1]);
-                  }
-                }
-                return;
-              }
-              // Enter sends; Shift+Enter is a new line. Never while an input method (such as
-              // Telex) is still composing a word - that Enter belongs to the word.
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                submit(draft);
-              }
-            }}
-            placeholder={
-              file ? t("chat.filePlaceholder") : t("chat.placeholder")
-            }
-            aria-label={
-              file ? t("chat.filePlaceholder") : t("chat.placeholder")
-            }
-            className="placeholder:text-muted-foreground max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none"
-          />
-          {busy ? (
-            <Button
-              key="stop"
-              type="button"
-              variant="primary"
-              size="icon"
-              onClick={onStop}
-              aria-label={t("chat.stop")}
-              title={t("chat.stop")}
-              className="size-9 rounded-full"
-            >
-              <Square className="size-3.5 fill-current" aria-hidden />
-            </Button>
-          ) : (
-            <Button
-              key="send"
-              type="submit"
-              variant="primary"
-              size="icon"
-              disabled={!draft.trim() || reading}
-              aria-label={reading ? t("chat.fileWait") : t("chat.send")}
-              title={reading ? t("chat.fileWait") : t("chat.send")}
-              className="size-9 rounded-full"
-            >
-              <SendHorizontal className="size-4" aria-hidden />
-            </Button>
-          )}
-        </form>
+      {threadList}
+      {!wide && drawer ? (
         <div
-          role="radiogroup"
-          aria-label={t("chat.detail")}
-          className="mt-2 flex flex-wrap items-center gap-1 px-1"
-        >
-          <span className="text-muted-foreground mr-1 text-[11px]">
-            {t("chat.detail")}
-          </span>
-          {CHAT_DETAILS.map((value) => {
-            const Icon = DETAIL_ICONS[value];
-            const chosen = detail === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={chosen}
-                title={t(`chat.detail${DETAIL_KEYS[value]}Hint`)}
-                onClick={() => {
-                  setDetail(value);
-                  saveDetail(value);
-                }}
-                className={cn(
-                  "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  chosen
-                    ? "border-primary/40 bg-primary-subtle text-primary"
-                    : "border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
-                )}
-              >
-                <Icon className="size-3.5" aria-hidden />
-                {t(`chat.detail${DETAIL_KEYS[value]}`)}
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-1.5 flex items-start justify-between gap-3 px-1">
-          <p className="text-muted-foreground/70 text-[10px]">
-            {t("search.answerCheck")}
-          </p>
-          {/* Near the limit, how much room is left: the box stops taking more at the end. */}
-          {draft.length >= CHAT_MAX_CHARS * 0.9 ? (
-            <span
-              aria-live="polite"
-              className={cn(
-                "shrink-0 text-[10px] tabular-nums",
-                draft.length >= CHAT_MAX_CHARS
-                  ? "text-danger font-semibold"
-                  : "text-warning",
-              )}
-            >
-              {t("chat.charCount", {
-                count: draft.length.toLocaleString(locale),
-                max: CHAT_MAX_CHARS.toLocaleString(locale),
-              })}
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      <ConfirmDialog
-        open={confirmClear}
-        onOpenChange={setConfirmClear}
-        title={t("chat.newConfirmTitle")}
-        description={t("chat.newConfirmBody")}
-        confirmLabel={t("chat.newConfirm")}
-        cancelLabel={t("common.cancel")}
-        destructive
-        onConfirm={() => {
-          clear();
-          setChips([]);
-          setDraft("");
-          setConfirmClear(false);
+          aria-hidden="true"
+          onClick={() => setDrawer(false)}
+          className="bg-foreground/20 absolute inset-0 z-10"
+        />
+      ) : null}
+      <div
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        // Files dragged anywhere onto the panel are attached when let go, as with the paper clip.
+        onDragOver={(event) => {
+          if (file || !event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
+            setDragging(false);
+          }
+        }}
+        onDrop={(event) => {
+          if (file || !event.dataTransfer.files.length) return;
+          event.preventDefault();
+          setDragging(false);
+          attach(Array.from(event.dataTransfer.files));
           inputRef.current?.focus();
         }}
-      />
+      >
+        {dragging ? <DropOverlay full={roomForFiles <= 0} /> : null}
+        <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
+          {wide ? null : (
+            <Button
+              variant="subtle"
+              size="icon"
+              onClick={() => setDrawer((value) => !value)}
+              aria-label={
+                drawer ? t("chat.hideThreads") : t("chat.showThreads")
+              }
+              title={drawer ? t("chat.hideThreads") : t("chat.showThreads")}
+              aria-expanded={drawer}
+              aria-controls="wikihub-chat-threads"
+            >
+              {drawer ? (
+                <PanelLeftClose className="size-4" aria-hidden />
+              ) : (
+                <PanelLeftOpen className="size-4" aria-hidden />
+              )}
+            </Button>
+          )}
+          <Sparkles className="text-primary size-4 shrink-0" aria-hidden />
+          <h2
+            className="flex min-w-0 flex-1 items-center text-sm font-semibold"
+            title={threadsApi.active?.title}
+          >
+            {renaming && renaming === threadsApi.active?.id ? (
+              <ThreadNameInput
+                title={threadsApi.active.title}
+                onDone={(title) => {
+                  setRenaming(null);
+                  if (title) threadsApi.rename(renaming, title);
+                }}
+              />
+            ) : !wide && threadsApi.threads.length ? (
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger className="hover:bg-surface-hover focus-visible:ring-ring data-[state=open]:bg-surface-hover -ml-1 flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1 py-1 transition-colors focus-visible:ring-2 focus-visible:outline-none">
+                  <span className="truncate">
+                    {threadsApi.active?.title ?? t("chat.title")}
+                  </span>
+                  <ChevronDown
+                    className="text-muted-foreground size-3.5 shrink-0"
+                    aria-hidden
+                  />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  {threadsApi.threads.slice(0, QUICK_THREADS).map((meta) => (
+                    <DropdownMenuItem
+                      key={meta.id}
+                      onSelect={() => openThread(meta.id)}
+                      className={cn(
+                        meta.id === threadsApi.activeId &&
+                          "bg-surface-selected",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {meta.title}
+                      </span>
+                      {unread.includes(meta.id) ? (
+                        <span
+                          role="img"
+                          aria-label={t("chat.threadUnread")}
+                          className="bg-primary size-2 shrink-0 rounded-full"
+                        />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  {threadsApi.active ? (
+                    <DropdownMenuItem
+                      onSelect={() => setRenaming(threadsApi.activeId)}
+                    >
+                      <Pencil className="size-4" aria-hidden />
+                      {t("chat.renameThis")}
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onSelect={() => setDrawer(true)}>
+                    {t("chat.allThreads")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : threadsApi.active ? (
+              <button
+                type="button"
+                onClick={() => setRenaming(threadsApi.activeId)}
+                aria-label={`${t("chat.renameThis")}: ${threadsApi.active.title}`}
+                className="group/title hover:bg-surface-hover focus-visible:ring-ring -ml-1 flex max-w-full min-w-0 cursor-text items-center gap-1.5 rounded-md px-1 py-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <span className="truncate">{threadsApi.active.title}</span>
+                <Pencil
+                  className="text-muted-foreground size-3.5 shrink-0 opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-visible/title:opacity-100"
+                  aria-hidden
+                />
+              </button>
+            ) : (
+              <span className="truncate">{t("chat.title")}</span>
+            )}
+          </h2>
+          <Button
+            variant="subtle"
+            size="icon"
+            disabled={entries.length === 0 || busy}
+            onClick={() => exportEntries(entries)}
+            aria-label={t("chat.export")}
+            title={t("chat.export")}
+          >
+            <Download className="size-4" aria-hidden />
+          </Button>
+          {wide ? null : (
+            <Button
+              variant="subtle"
+              size="sm"
+              disabled={entries.length === 0}
+              onClick={newChat}
+            >
+              <SquarePen aria-hidden />
+              {t("chat.newChat")}
+            </Button>
+          )}
+          <Button
+            variant="subtle"
+            size="icon"
+            onClick={onToggleExpanded}
+            aria-label={expanded ? t("chat.collapse") : t("chat.expand")}
+            title={expanded ? t("chat.collapse") : t("chat.expand")}
+            aria-pressed={expanded}
+            className="hidden sm:inline-flex"
+          >
+            {expanded ? (
+              <Minimize2 className="size-4" aria-hidden />
+            ) : (
+              <Maximize2 className="size-4" aria-hidden />
+            )}
+          </Button>
+          <Button
+            variant="subtle"
+            size="icon"
+            onClick={onClose}
+            aria-label={t("chat.close")}
+          >
+            <X className="size-4" aria-hidden />
+          </Button>
+        </header>
+
+        <div
+          ref={listRef}
+          role="log"
+          aria-live="polite"
+          aria-label={t("chat.title")}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            stickRef.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            setAway(!stickRef.current);
+          }}
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto px-4 py-5",
+            // A comfortable reading column; wider when the panel is expanded, so a wide table or
+            // a long answer uses the room it was given.
+            expanded
+              ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
+              : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
+          )}
+        >
+          {loaded && entries.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+              <span className="bg-primary-subtle text-primary flex size-10 items-center justify-center rounded-full">
+                <Sparkles className="size-5" aria-hidden />
+              </span>
+              <p className="text-sm font-semibold">{t("chat.emptyTitle")}</p>
+              <p className="text-muted-foreground text-xs">
+                {t("chat.emptyHint")}
+              </p>
+              <div className="flex w-full flex-col gap-1.5">
+                {examples.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => submit(example)}
+                    className="border-border text-foreground hover:bg-surface-hover hover:border-border-strong focus-visible:ring-ring cursor-pointer rounded-lg border px-3 py-2 text-left text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <SelectionAssistant
+              endpoint="/api/v1/ai/explain"
+              className="space-y-6"
+            >
+              {entries.map((entry, index) => (
+                <div
+                  key={entry.id}
+                  data-entry={entry.id}
+                  className="data-[found=true]:bg-primary/10 -mx-2 rounded-lg px-2 transition-colors duration-500"
+                >
+                  <Message
+                    entry={entry}
+                    question={questionBefore(entries, index)}
+                    onOpen={open}
+                    onRunPlan={(id) =>
+                      void runPlan(id, locale).then(() => router.refresh())
+                    }
+                    onCancelPlan={cancelPlan}
+                    onRetry={retry}
+                    canRetry={entry === last && !busy}
+                    busy={busy}
+                    onEdit={edit}
+                    onRegenerate={regenerate}
+                    versions={versionsOf(entry, slots)}
+                    onSwitch={(delta) => {
+                      if (entry.role !== "user" || !entry.slot) return;
+                      const list = listRef.current;
+                      const el = list?.querySelector<HTMLElement>(
+                        `[data-slot="${CSS.escape(entry.slot)}"]`,
+                      );
+                      if (list && el) {
+                        anchorRef.current = {
+                          slot: entry.slot,
+                          top:
+                            el.getBoundingClientRect().top -
+                            list.getBoundingClientRect().top,
+                        };
+                        // Not following the end of the conversation while looking at another version.
+                        stickRef.current = false;
+                        setAway(true);
+                      }
+                      switchVersion(entry.slot, delta);
+                    }}
+                  />
+                  {compact?.upTo === entry.id ? (
+                    <CompactNote
+                      summary={compact.summary}
+                      count={compact.count}
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </SelectionAssistant>
+          )}
+        </div>
+
+        <div
+          className={cn(
+            "relative shrink-0 px-4 pt-1 pb-3",
+            // A comfortable reading column; wider when the panel is expanded, so a wide table or
+            // a long answer uses the room it was given.
+            expanded
+              ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
+              : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
+          )}
+        >
+          {away ? (
+            <button
+              type="button"
+              onClick={() => {
+                const list = listRef.current;
+                stickRef.current = true;
+                setAway(false);
+                list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+              }}
+              aria-label={t("chat.scrollDown")}
+              title={t("chat.scrollDown")}
+              className="border-border bg-surface text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute -top-11 left-1/2 flex size-8 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border shadow-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <ArrowDown className="size-4" aria-hidden />
+            </button>
+          ) : null}
+          {file ? (
+            <div className="mb-2 flex items-center gap-2 px-1">
+              <span
+                className="border-primary/40 bg-primary-subtle text-primary inline-flex min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium"
+                title={t("chat.fileScopeHint")}
+              >
+                <Paperclip className="size-3.5 shrink-0" aria-hidden />
+                <span className="truncate">
+                  {t("chat.fileScope", { file: file.filename })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFile(null);
+                    inputRef.current?.focus();
+                  }}
+                  aria-label={t("chat.fileScopeClear")}
+                  title={t("chat.fileScopeClear")}
+                  className="hover:bg-primary/15 active:bg-primary/25 focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {!file && chips.length ? (
+            <ul
+              aria-label={t("chat.attachedFiles")}
+              className="mb-2 flex flex-wrap items-start gap-1.5 px-1"
+            >
+              {chips.map((chip) => (
+                <li key={chip.key} className="max-w-full min-w-0">
+                  <span
+                    title={chip.error ?? chip.filename}
+                    className={cn(
+                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium",
+                      chip.status === "failed"
+                        ? "border-danger/40 bg-danger-bg text-danger"
+                        : "border-border bg-surface-sunken text-foreground",
+                    )}
+                  >
+                    {chip.status === "reading" ? (
+                      <Loader2
+                        className="text-primary size-3.5 shrink-0 animate-spin"
+                        aria-hidden
+                      />
+                    ) : chip.status === "failed" ? (
+                      <TriangleAlert
+                        className="size-3.5 shrink-0"
+                        aria-hidden
+                      />
+                    ) : (
+                      <FileText
+                        className="text-muted-foreground size-3.5 shrink-0"
+                        aria-hidden
+                      />
+                    )}
+                    <span className="truncate">{chip.filename}</span>
+                    {chip.status === "reading" ? (
+                      <span className="text-muted-foreground shrink-0">
+                        {t("chat.fileReading")}
+                      </span>
+                    ) : null}
+                    {chip.status === "failed" && chip.error ? (
+                      <span className="sr-only">{chip.error}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChips((current) =>
+                          current.filter((c) => c.key !== chip.key),
+                        );
+                        inputRef.current?.focus();
+                      }}
+                      aria-label={t("chat.fileRemove", { file: chip.filename })}
+                      title={t("chat.fileRemove", { file: chip.filename })}
+                      className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <X className="size-3" aria-hidden />
+                    </button>
+                  </span>
+                  {chip.status === "failed" && chip.error ? (
+                    <p
+                      className="text-danger mt-0.5 px-2.5 text-[11px]"
+                      aria-hidden
+                    >
+                      {chip.error}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(draft);
+            }}
+            className={cn(
+              "border-border bg-surface focus-within:border-border-strong flex items-end gap-2 rounded-3xl border py-1.5 pr-1.5 pl-1.5 shadow-sm transition-shadow duration-150 focus-within:shadow-md",
+            )}
+          >
+            {file ? (
+              <span className="w-1.5 shrink-0" aria-hidden />
+            ) : (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  accept={CHAT_FILE_TYPES}
+                  onChange={(event) => {
+                    attach(Array.from(event.target.files ?? []));
+                    // The same file can be picked again after it was removed.
+                    event.target.value = "";
+                    inputRef.current?.focus();
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={roomForFiles <= 0}
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label={
+                    roomForFiles <= 0
+                      ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
+                      : t("chat.attach")
+                  }
+                  title={
+                    roomForFiles <= 0
+                      ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
+                      : t("chat.attach")
+                  }
+                  className="text-muted-foreground hover:text-foreground size-9 shrink-0 rounded-full"
+                >
+                  <Paperclip className="size-4" aria-hidden />
+                </Button>
+              </>
+            )}
+            <textarea
+              ref={inputRef}
+              value={draft}
+              rows={1}
+              maxLength={CHAT_MAX_CHARS}
+              onChange={(event) => {
+                browsing.current = null;
+                setDraft(event.target.value);
+              }}
+              onPaste={(event) => {
+                if (file) return;
+                // A file copied from the computer is attached.
+                const pasted = Array.from(event.clipboardData.files);
+                if (pasted.length) {
+                  event.preventDefault();
+                  attach(pasted);
+                  return;
+                }
+                // Words too many for the box would be cut off at its limit: they go in as a
+                // text file instead, read whole, and the box stays free for the question.
+                const words = event.clipboardData.getData("text/plain");
+                const box = event.currentTarget;
+                const kept =
+                  draft.length - (box.selectionEnd - box.selectionStart);
+                if (
+                  kept + words.length <= CHAT_MAX_CHARS ||
+                  roomForFiles <= 0
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                attach([
+                  new File([words], pastedName(), { type: "text/plain" }),
+                ]);
+              }}
+              onKeyDown={(event) => {
+                // Up and Down walk through the questions asked before, as in a terminal.
+                if (
+                  (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  const box = event.currentTarget;
+                  const up = event.key === "ArrowUp";
+                  // Only when the caret has nowhere further to go in the text: in a question of
+                  // several lines the arrows still move between its lines.
+                  const onFirstLine = !box.value
+                    .slice(0, box.selectionStart)
+                    .includes("\n");
+                  const onLastLine = !box.value
+                    .slice(box.selectionEnd)
+                    .includes("\n");
+                  if (up ? !onFirstLine : !onLastLine) return;
+                  const at = browsing.current;
+                  if (up) {
+                    const next = at ? at.index - 1 : asked.length - 1;
+                    if (next < 0) {
+                      // The oldest one is already shown (or there is none): nothing to jump to.
+                      if (at) event.preventDefault();
+                      return;
+                    }
+                    event.preventDefault();
+                    browsing.current = {
+                      index: next,
+                      saved: at ? at.saved : draft,
+                    };
+                    caretToEnd.current = true;
+                    setDraft(asked[next]);
+                  } else if (at) {
+                    event.preventDefault();
+                    caretToEnd.current = true;
+                    if (at.index + 1 >= asked.length) {
+                      // Past the newest: back to what was being typed.
+                      browsing.current = null;
+                      setDraft(at.saved);
+                    } else {
+                      browsing.current = {
+                        index: at.index + 1,
+                        saved: at.saved,
+                      };
+                      setDraft(asked[at.index + 1]);
+                    }
+                  }
+                  return;
+                }
+                // Enter sends; Shift+Enter is a new line. Never while an input method (such as
+                // Telex) is still composing a word - that Enter belongs to the word.
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  submit(draft);
+                }
+              }}
+              placeholder={
+                file ? t("chat.filePlaceholder") : t("chat.placeholder")
+              }
+              aria-label={
+                file ? t("chat.filePlaceholder") : t("chat.placeholder")
+              }
+              className="placeholder:text-muted-foreground max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none"
+            />
+            {busy ? (
+              <Button
+                key="stop"
+                type="button"
+                variant="primary"
+                size="icon"
+                onClick={onStop}
+                aria-label={t("chat.stop")}
+                title={t("chat.stop")}
+                className="size-9 rounded-full"
+              >
+                <Square className="size-3.5 fill-current" aria-hidden />
+              </Button>
+            ) : (
+              <Button
+                key="send"
+                type="submit"
+                variant="primary"
+                size="icon"
+                disabled={!draft.trim() || reading}
+                aria-label={reading ? t("chat.fileWait") : t("chat.send")}
+                title={reading ? t("chat.fileWait") : t("chat.send")}
+                className="size-9 rounded-full"
+              >
+                <SendHorizontal className="size-4" aria-hidden />
+              </Button>
+            )}
+          </form>
+          <div
+            role="radiogroup"
+            aria-label={t("chat.detail")}
+            className="mt-2 flex flex-wrap items-center gap-1 px-1"
+          >
+            <span className="text-muted-foreground mr-1 text-[11px]">
+              {t("chat.detail")}
+            </span>
+            {CHAT_DETAILS.map((value) => {
+              const Icon = DETAIL_ICONS[value];
+              const chosen = detail === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={chosen}
+                  title={t(`chat.detail${DETAIL_KEYS[value]}Hint`)}
+                  onClick={() => {
+                    setDetail(value);
+                    saveDetail(value);
+                  }}
+                  className={cn(
+                    "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                    chosen
+                      ? "border-primary/40 bg-primary-subtle text-primary"
+                      : "border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
+                  )}
+                >
+                  <Icon className="size-3.5" aria-hidden />
+                  {t(`chat.detail${DETAIL_KEYS[value]}`)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-1.5 flex items-start justify-between gap-3 px-1">
+            <p className="text-muted-foreground/70 text-[10px]">
+              {t("search.answerCheck")}
+            </p>
+            {/* Near the limit, how much room is left: the box stops taking more at the end. */}
+            {draft.length >= CHAT_MAX_CHARS * 0.9 ? (
+              <span
+                aria-live="polite"
+                className={cn(
+                  "shrink-0 text-[10px] tabular-nums",
+                  draft.length >= CHAT_MAX_CHARS
+                    ? "text-danger font-semibold"
+                    : "text-warning",
+                )}
+              >
+                {t("chat.charCount", {
+                  count: draft.length.toLocaleString(locale),
+                  max: CHAT_MAX_CHARS.toLocaleString(locale),
+                })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1894,18 +2272,44 @@ function DropOverlay({ full }: { full: boolean }) {
  * right, so a question can be asked - and followed up - without leaving what is being read.
  * It does not exist at all while the AI assistant is off.
  */
-export function ChatWidget({ userId }: { userId: string }) {
+export function ChatWidget({
+  userId,
+  persist = true,
+}: {
+  userId: string;
+  /** False while an administrator views as someone else: nothing is kept in the browser. */
+  persist?: boolean;
+}) {
   const { t } = useTranslation();
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(readOpen);
   // Mounted on first use, then kept (hidden) so a reply being written is not lost on close.
   const [everOpened, setEverOpened] = useState(readOpen);
+  // Lets the newly-mounted panel paint one off-screen frame before sliding in on first open,
+  // while keeping an already-open session steady across page navigations.
+  const [panelReady, setPanelReady] = useState(readOpen);
   // Widened to the whole width of the page, for long answers and tables.
   const [expanded, setExpanded] = useState(false);
   // How wide the panel is when it is not the whole page: dragged by its left edge.
   // Read once: nothing is drawn from it until the panel is opened, long after hydration.
   const [width, setWidth] = useState(readWidth);
   const [dragging, setDragging] = useState(false);
+  // The kept chats are opened with the server's key before the panel reads them. Without it
+  // they are left alone, and this page keeps its chats to itself.
+  const vault = useChatVault(userId, persist, enabled);
+  const kept = persist && vault !== "failed";
+  // Before the panel is mounted and reads anything of the person viewed.
+  useEffect(() => keepChatsInMemory(!kept), [kept]);
+  // A phone draws the panel over the whole screen: no room for the threads beside it.
+  const [roomy, setRoomy] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia?.("(min-width: 768px)");
+    if (!query) return;
+    const update = () => setRoomy(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, []);
 
   useEffect(() => {
     if (!dragging) return;
@@ -1952,6 +2356,19 @@ export function ChatWidget({ userId }: { userId: string }) {
   }, [open]);
   const adoptRef = useRef<((detail: ChatOpenDetail) => void) | null>(null);
   const pending = useRef<ChatOpenDetail | null>(null);
+  /** Hand what the chat was opened with to the panel, if it is there to take it. */
+  const handOver = useCallback(() => {
+    if (pending.current && adoptRef.current) {
+      adoptRef.current(pending.current);
+      pending.current = null;
+    }
+  }, []);
+  // Asked for while the chats were still being opened.
+  useEffect(() => {
+    if (!enabled || vault === "opening") return;
+    const timer = window.setTimeout(handOver, 0);
+    return () => window.clearTimeout(timer);
+  }, [enabled, vault, handOver]);
 
   useEffect(() => {
     let alive = true;
@@ -1970,12 +2387,7 @@ export function ChatWidget({ userId }: { userId: string }) {
       setEverOpened(true);
       setOpen(true);
       // The panel may not be mounted yet: hand over once it is.
-      setTimeout(() => {
-        if (pending.current && adoptRef.current) {
-          adoptRef.current(pending.current);
-          pending.current = null;
-        }
-      }, 0);
+      setTimeout(handOver, 0);
     };
     const onToggle = () => {
       setEverOpened(true);
@@ -1987,7 +2399,7 @@ export function ChatWidget({ userId }: { userId: string }) {
       window.removeEventListener(CHAT_OPEN_EVENT, onOpen);
       window.removeEventListener(CHAT_TOGGLE_EVENT, onToggle);
     };
-  }, []);
+  }, [handOver]);
 
   useEffect(() => {
     if (!open) return;
@@ -2028,69 +2440,111 @@ export function ChatWidget({ userId }: { userId: string }) {
     };
   }, [open]);
 
-  if (!enabled) return null;
+  useEffect(() => {
+    if (!everOpened || panelReady) return;
+    let inner = 0;
+    const outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => {
+        setPanelReady(true);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(outer);
+      if (inner) window.cancelAnimationFrame(inner);
+    };
+  }, [everOpened, panelReady]);
+
+  if (!enabled || vault === "opening") return null;
+
+  const shown = open && panelReady;
 
   return (
     <>
       {everOpened ? (
-        <aside
-          id="wikihub-chat-panel"
-          aria-label={t("chat.title")}
-          hidden={!open}
-          style={{ "--chat-width": `${width}px` } as React.CSSProperties}
-          className={cn(
-            "border-border bg-background fixed top-(--wh-topbar-height) right-0 bottom-0 z-40 flex w-full max-w-full flex-col border-l shadow-xl",
-            !dragging &&
-              "transition-[width] duration-200 motion-reduce:transition-none",
-            expanded ? "sm:w-full" : "sm:w-(--chat-width)",
-            !open && "hidden",
-          )}
-        >
-          <button
-            type="button"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={t("chat.resize")}
-            title={t("chat.dragToResize")}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDoubleClick={() => {
-              setExpanded(false);
-              setWidth(DEFAULT_WIDTH);
-            }}
-            onKeyDown={(event) => {
-              // The keyboard way to resize: the arrows move the edge, as dragging does.
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-                return;
-              event.preventDefault();
-              const step = event.key === "ArrowLeft" ? 32 : -32;
-              const current = expanded ? window.innerWidth : width;
-              const next = current + step;
-              if (next >= window.innerWidth - FULL_SLACK) setExpanded(true);
-              else {
-                setExpanded(false);
-                setWidth(Math.max(MIN_WIDTH, next));
-              }
-            }}
-            className="group focus-visible:ring-ring absolute top-0 bottom-0 left-0 z-10 hidden w-3 -translate-x-1/2 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none sm:block"
-          >
-            <span
-              className={cn(
-                "bg-border-strong absolute top-0 left-1/2 h-full w-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
-                dragging && "opacity-100",
-              )}
-            />
-          </button>
-          <ChatPanel
-            userId={userId}
-            onClose={() => setOpen(false)}
-            expanded={expanded}
-            onToggleExpanded={() => setExpanded((value) => !value)}
-            adoptRef={adoptRef}
+        <>
+          <div
+            data-chat-backdrop=""
+            aria-hidden="true"
+            onClick={() => setOpen(false)}
+            className={cn(
+              "fixed inset-x-0 top-(--wh-topbar-height) bottom-0 z-[35] bg-slate-950/30 backdrop-blur-[2px] transition-[opacity,visibility] duration-[380ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[opacity] motion-reduce:transition-none dark:bg-black/50",
+              open
+                ? "pointer-events-auto visible"
+                : "pointer-events-none invisible",
+              shown ? "opacity-100" : "opacity-0",
+            )}
           />
-        </aside>
+          <aside
+            id="wikihub-chat-panel"
+            aria-label={t("chat.title")}
+            hidden={!open}
+            inert={!open}
+            style={{ "--chat-width": `${width}px` } as React.CSSProperties}
+            className={cn(
+              "border-border bg-background fixed top-(--wh-topbar-height) right-0 bottom-0 z-40 flex w-full max-w-full flex-col border-l shadow-2xl will-change-[translate]",
+              !dragging &&
+                "transition-[translate,visibility,width] duration-[380ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+              expanded ? "sm:w-full" : "sm:w-(--chat-width)",
+              open ? "visible" : "pointer-events-none invisible",
+              shown ? "translate-x-0" : "translate-x-full",
+            )}
+          >
+            <button
+              type="button"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t("chat.resize")}
+              title={t("chat.dragToResize")}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDoubleClick={() => {
+                setExpanded(false);
+                setWidth(DEFAULT_WIDTH);
+              }}
+              onKeyDown={(event) => {
+                // The keyboard way to resize: the arrows move the edge, as dragging does.
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+                  return;
+                event.preventDefault();
+                const step = event.key === "ArrowLeft" ? 32 : -32;
+                const current = expanded ? window.innerWidth : width;
+                const next = current + step;
+                if (next >= window.innerWidth - FULL_SLACK) setExpanded(true);
+                else {
+                  setExpanded(false);
+                  setWidth(Math.max(MIN_WIDTH, next));
+                }
+              }}
+              className="group focus-visible:ring-ring absolute top-0 bottom-0 left-0 z-10 hidden w-3 -translate-x-1/2 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none sm:block"
+            >
+              <span
+                className={cn(
+                  "bg-border-strong absolute top-0 left-1/2 h-full w-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+                  dragging && "opacity-100",
+                )}
+              />
+            </button>
+            {vault === "failed" ? (
+              <p
+                role="status"
+                className="border-border bg-muted text-muted-foreground border-b px-4 py-2 text-xs leading-5"
+              >
+                {t("chat.historyLocked")}
+              </p>
+            ) : null}
+            <ChatPanel
+              userId={userId}
+              persist={kept}
+              wide={roomy && (expanded || width >= THREADS_INLINE_WIDTH)}
+              onClose={() => setOpen(false)}
+              expanded={expanded}
+              onToggleExpanded={() => setExpanded((value) => !value)}
+              adoptRef={adoptRef}
+            />
+          </aside>
+        </>
       ) : null}
     </>
   );

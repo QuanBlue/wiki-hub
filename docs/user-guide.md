@@ -81,7 +81,17 @@ you can already read, and has an hourly limit per person.
   opens a panel where you can ask and follow up (`Enter` sends, `Shift+Enter` adds a
   line). Answers stream in and cite wiki pages as in search. The panel can be dragged
   wider or narrower by its left edge, expanded to the whole page, and put away by
-  clicking outside it; the conversation is kept only in your browser and is removed when you sign out or switch account. If an
+  clicking outside it. You can keep many chats: each is named after its first answer (rename
+  or pin it as you like; clicking the name at the top of a wide panel renames it), found again
+  with *Search chats* (names and messages, with or without accents), and exported to a file or
+  deleted from its `...` menu. The list of chats can be resized by its right edge or folded
+  into a narrow strip, and a swipe to the left closes it on a narrow panel. Unsent words and
+  waiting files stay with their chat. In a long chat the older messages are summarized so
+  they are still remembered; naming and summarizing count against your AI limit. Chats are kept
+  only in your browser, not on the server, encrypted with a key the server gives only to the
+  signed-in person (set `WIKIHUB_CHAT_STORAGE_KEY` to give this its own secret): they stay when you
+  sign out but cannot be read until you sign in again, each account sees its own,
+  and when browser storage is full the oldest unpinned ones are dropped, with a notice. If an
   administrator turns on *Web search* (Administration > AI assistant), a public technical
   question the wiki does not cover may be looked up on the internet - you see the query,
   and the web pages used are listed under *From the web*; only that short query, stripped

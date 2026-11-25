@@ -2372,3 +2372,15 @@ html[data-export="true"] .wh-toaster {
     animation: none !important;
   }
 }
+
+/* Allow the AI Assistant panel to animate slide-in / slide-out smoothly instead
+   of abruptly disappearing when closed. Must live in `@layer base` because
+   Tailwind v4 Preflight declares `[hidden] { display: none !important }` in
+   `@layer base`, and in CSS Cascade Level 5 layered `!important` rules beat
+   unlayered `!important` rules. */
+@layer base {
+  #wikihub-chat-panel[hidden] {
+    display: flex !important;
+  }
+}
+

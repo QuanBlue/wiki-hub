@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -133,7 +133,7 @@ describe("the chat widget", () => {
     const box = await openPanel(actor);
     await actor.type(box, "billing address{Enter}");
 
-    expect(await screen.findByText("billing address")).toBeInTheDocument();
+    expect(await within(screen.getByRole("log")).findByText("billing address")).toBeInTheDocument();
     expect(await screen.findByText("The server is")).toBeInTheDocument();
     // While it is being written there is a way to stop, and no way to send another.
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
@@ -224,7 +224,7 @@ describe("the chat widget", () => {
     await actor.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("10.0.0.5")).toBeInTheDocument();
-    expect(screen.getAllByText("billing")).toHaveLength(1); // not asked twice on screen
+    expect(within(screen.getByRole("log")).getAllByText("billing")).toHaveLength(1); // not asked twice on screen
   });
 
   it("says the AI service failed, not that the assistant is off, and offers Try again", async () => {
@@ -262,7 +262,7 @@ describe("the chat widget", () => {
     await actor.click(await screen.findByRole("button", { name: "Stop" }));
 
     // The question stays where it was asked, with a note under it, and the box is free.
-    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing address")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
       "You cancelled this answer.",
     );
@@ -318,7 +318,7 @@ describe("the chat widget", () => {
     expect(await screen.findByText("10.0.0.5")).toBeInTheDocument();
   });
 
-  it("a new chat asks first, then clears", async () => {
+  it("a new chat starts at once and keeps the last one in the list of chats", async () => {
     ai(true);
     streamChat.mockResolvedValue(FOUND);
     const actor = userEvent.setup();
@@ -327,12 +327,13 @@ describe("the chat widget", () => {
     await actor.type(await openPanel(actor), "billing{Enter}");
     await screen.findByText("10.0.0.5");
     await actor.click(screen.getByRole("button", { name: "New chat" }));
-    await actor.click(
-      await screen.findByRole("button", { name: "Clear and start over" }),
-    );
 
     expect(await screen.findByText("Ask your wiki")).toBeInTheDocument();
-    expect(window.localStorage.getItem("wikihub:chat:v1:u1")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await actor.click(screen.getByRole("button", { name: "Show chats" }));
+    const list = await screen.findByRole("navigation", { name: "Chats" });
+    await actor.click(within(list).getByRole("button", { name: "billing" }));
+    expect(await screen.findByText("10.0.0.5")).toBeInTheDocument();
   });
 
   it("carries on from an answer given in the search box", async () => {
@@ -343,7 +344,7 @@ describe("the chat widget", () => {
 
     act(() => openChat({ question: "billing address", result: FOUND }));
 
-    expect(await screen.findByText("billing address")).toBeInTheDocument();
+    expect(await within(screen.getByRole("log")).findByText("billing address")).toBeInTheDocument();
     expect(await screen.findByText("10.0.0.5")).toBeInTheDocument();
     expect(streamChat).not.toHaveBeenCalled();
     await actor.click(screen.getByRole("button", { name: "Expand chat" }));
@@ -393,7 +394,7 @@ describe("the chat widget", () => {
     edge.focus();
     await actor.keyboard("{ArrowLeft}");
 
-    expect(window.localStorage.getItem("wikihub:chat-width")).toBe("448");
+    expect(window.localStorage.getItem("wikihub:chat-width")).toBe("832");
   });
 });
 
@@ -452,9 +453,9 @@ describe("a question already asked", () => {
     expect(streamChat.mock.calls[2][0]).toEqual([
       { role: "user", content: "billing address" },
     ]);
-    expect(screen.queryByText("billing adress")).toBeNull();
-    expect(screen.queryByText("and its owner?")).toBeNull();
-    expect(await screen.findByText("billing address")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).queryByText("billing adress")).toBeNull();
+    expect(within(screen.getByRole("log")).queryByText("and its owner?")).toBeNull();
+    expect(await within(screen.getByRole("log")).findByText("billing address")).toBeInTheDocument();
   });
 
   it("is left as it was when the edit is cancelled or not changed", async () => {
@@ -472,7 +473,7 @@ describe("a question already asked", () => {
       " more",
     );
     await actor.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing address")).toBeInTheDocument();
 
     await actor.click(screen.getByRole("button", { name: "Edit message" }));
     // The editor's own Send comes before the one of the message box.
@@ -537,7 +538,7 @@ describe("the versions of an edited question", () => {
 
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
 
-    expect(screen.getByText("billing adress")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing adress")).toBeInTheDocument();
     expect(screen.getByText(/First answer/)).toBeInTheDocument();
     expect(screen.queryByText(/Second answer/)).toBeNull();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
@@ -547,7 +548,7 @@ describe("the versions of an edited question", () => {
 
     await actor.click(screen.getByRole("button", { name: "Next version" }));
 
-    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing address")).toBeInTheDocument();
     expect(screen.getByText(/Second answer/)).toBeInTheDocument();
   });
 
@@ -563,9 +564,9 @@ describe("the versions of an edited question", () => {
     await screen.findByText(/Owner answer/);
     // ... is not part of the first version, and comes back with the second.
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
-    expect(screen.queryByText("and its owner?")).toBeNull();
+    expect(within(screen.getByRole("log")).queryByText("and its owner?")).toBeNull();
     await actor.click(screen.getByRole("button", { name: "Next version" }));
-    expect(screen.getByText("and its owner?")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("and its owner?")).toBeInTheDocument();
     expect(screen.getByText(/Owner answer/)).toBeInTheDocument();
 
     const lastSent = streamChat.mock.calls
@@ -596,7 +597,7 @@ describe("the versions of an edited question", () => {
     expect(screen.getByText("3 / 3")).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
-    expect(screen.getByText("billing adress")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing adress")).toBeInTheDocument();
   });
 
   it("is still there after the page is opened again", async () => {
@@ -637,11 +638,11 @@ describe("the versions of an edited question", () => {
     await actor.click(await screen.findByRole("button", { name: "Stop" }));
 
     // The edited question is there with its note, and the first version is one arrow away.
-    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing address")).toBeInTheDocument();
     expect(screen.getByText("You cancelled this answer.")).toBeInTheDocument();
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
-    expect(screen.getByText("billing adress")).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("billing adress")).toBeInTheDocument();
     expect(screen.getByText(/First answer/)).toBeInTheDocument();
   });
 

@@ -205,7 +205,9 @@ describe("a question kept in the browser", () => {
     );
     await open();
 
-    expect(await screen.findByText("edited once")).toBeInTheDocument();
+    expect(
+      await within(screen.getByRole("log")).findByText("edited once"),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/ \/ /)).toBeNull();
   });
 });

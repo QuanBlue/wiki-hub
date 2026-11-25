@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     #: Blank derives one from ``secret_key``, which then must never change or
     #: every stored mailbox password becomes unreadable and must be re-entered.
     mail_encryption_key: str = ""
+    #: What the keys that encrypt each person's AI chat history in their browser are
+    #: derived from. Blank uses ``secret_key``. Changing the one in use makes the
+    #: saved chats unreadable until it is put back.
+    chat_storage_key: str = ""
     #: Per-mailbox ceiling for one send. Kept well under the frontend proxy's
     #: request limit because the requester is waiting on the answer.
     mail_send_timeout_seconds: float = 8.0
@@ -324,6 +328,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "WIKIHUB_ONLYOFFICE_JWT_SECRET must be a random value of at least 32 characters"
                 )
+        self.chat_storage_key = self.chat_storage_key.strip()
+        if self.chat_storage_key and len(self.chat_storage_key) < 32:
+            raise ValueError("WIKIHUB_CHAT_STORAGE_KEY must be blank or at least 32 characters")
         if self.env is Environment.production:
             weak = not self.secret_key or "change-me" in self.secret_key.lower()
             if weak or len(self.secret_key) < 32:

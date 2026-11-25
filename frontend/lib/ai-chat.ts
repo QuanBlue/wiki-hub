@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api-client";
+import { CHAT_PREFIX, chatKey, sealedStorage } from "@/lib/chat-vault";
 import { apiBaseUrl } from "@/lib/env";
 import type {
   AnswerAction,
@@ -51,8 +52,6 @@ export const CHAT_FILE_TYPES =
   ".docx,.odt,.rtf,.epub,.html,.htm,.md,.markdown,.pdf,.xlsx,.csv,.txt,.text,.log";
 /** The largest file the server reads, in bytes. */
 export const CHAT_FILE_MAX_BYTES = 20 * 1024 * 1024;
-/** The most turns kept in the browser. */
-const STORED_MAX = 30;
 /**
  * How long a reply may go quiet before it is given up on. The server stops at 60 seconds in
  * all; this is for when nothing arrives at all (a dropped connection, a stalled proxy).
@@ -128,6 +127,74 @@ export type ChatEntry =
     };
 
 export type ChatSend = { role: "user" | "assistant"; content: string };
+
+// ------------------------------------------------------------ remembering a long thread
+
+/** How many earlier messages the model reads with a question (the server's own limit). */
+export const CHAT_WINDOW = 10;
+/** How many of the latest messages are left as they are when the older ones are summarised. */
+export const CHAT_COMPACT_KEEP = 4;
+/** The most messages summarised in one go, and the longest summary, as the server takes them. */
+export const CHAT_COMPACT_MAX = 40;
+export const CHAT_SUMMARY_CHARS = 1500;
+
+/** The turns of a thread the model is given: every question, and the answers that were given. */
+function usableTurns(entries: ChatEntry[]): (ChatSend & { id: string })[] {
+  return entries.flatMap((entry) =>
+    entry.role === "user" ||
+    (entry.status === "done" && entry.found && entry.content.trim())
+      ? [{ id: entry.id, role: entry.role, content: entry.content }]
+      : [],
+  );
+}
+
+/**
+ * What to summarise now, if anything: once more messages are not yet summarised than the model
+ * reads, all but the latest few of them. ``upTo`` is the last one covered, and ``count`` how
+ * many this adds. ``covered`` is the last turn the summary so far covers.
+ */
+export function messagesToCompact(
+  entries: ChatEntry[],
+  covered?: string,
+): { messages: ChatSend[]; upTo: string; count: number } | null {
+  const turns = usableTurns(entries);
+  const from = covered ? turns.findIndex((turn) => turn.id === covered) + 1 : 0;
+  const rest = turns.slice(from);
+  if (rest.length <= CHAT_WINDOW) return null;
+  const part = rest.slice(0, -CHAT_COMPACT_KEEP).slice(0, CHAT_COMPACT_MAX);
+  return {
+    messages: part.map(({ role, content }) => ({
+      role,
+      content: content.slice(0, CHAT_HISTORY_CHARS),
+    })),
+    upTo: part[part.length - 1].id,
+    count: part.length,
+  };
+}
+
+/** A short name for a thread from its first question and answer. */
+export async function nameThread(
+  question: string,
+  answer: string,
+): Promise<string> {
+  const { title } = await api.post<{ title: string }>("/api/v1/ai/chat/title", {
+    question: question.slice(0, CHAT_MAX_CHARS),
+    answer: answer.slice(0, CHAT_HISTORY_CHARS),
+  });
+  return title;
+}
+
+/** One summary of the summary so far and the messages that followed it. */
+export async function summarizeThread(
+  summary: string,
+  messages: ChatSend[],
+): Promise<string> {
+  const read = await api.post<{ summary: string }>("/api/v1/ai/chat/compact", {
+    summary,
+    messages,
+  });
+  return read.summary;
+}
 
 // ------------------------------------------------------------ what goes to the server
 
@@ -248,6 +315,7 @@ export async function streamChat(
     detail = "normal",
     attachmentId = null,
     fileIds = [],
+    summary = "",
     idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
   }: {
     signal?: AbortSignal;
@@ -262,6 +330,8 @@ export async function streamChat(
     attachmentId?: string | null;
     /** Files attached in the chat (``uploadChatFile``): read together with the wiki. */
     fileIds?: string[];
+    /** What was said before the messages still read, summarised. */
+    summary?: string;
     idleTimeoutMs?: number;
   } = {},
 ): Promise<AnswerResult> {
@@ -294,6 +364,7 @@ export async function streamChat(
           detail,
           ...(attachmentId ? { attachment_id: attachmentId } : {}),
           ...(fileIds.length ? { file_ids: fileIds } : {}),
+          ...(summary ? { summary } : {}),
         }),
         credentials: "include",
         signal: controller.signal,
@@ -469,40 +540,57 @@ export type ChatState = { entries: ChatEntry[]; slots: ChatSlots };
 
 export const EMPTY_CHAT: ChatState = { entries: [], slots: {} };
 
-const CHAT_KEY_PREFIX = "wikihub:chat:v1:";
-const storageKey = (userId: string) => `${CHAT_KEY_PREFIX}${userId}`;
-/** The files attached to the conversation: under the same prefix, so signing out clears them. */
-const filesKey = (userId: string) => `${CHAT_KEY_PREFIX}files:${userId}`;
+export { CHAT_PREFIX, chatKey };
+/** The single conversation of the first version, moved into a thread when it is first read. */
+export const LEGACY_CHAT_PREFIX = "wikihub:chat:v1:";
+/** A storage that forgets everything when the page closes. */
+function memoryStorage(): Storage {
+  const items = new Map<string, string>();
+  return {
+    get length() {
+      return items.size;
+    },
+    clear: () => items.clear(),
+    getItem: (key) => items.get(key) ?? null,
+    key: (index) => [...items.keys()][index] ?? null,
+    removeItem: (key) => void items.delete(key),
+    setItem: (key, value) => void items.set(key, String(value)),
+  };
+}
 
-/** Set once the chats were wiped (signing out, changing account): nothing is written back. */
-let wiped = false;
+let memory: Storage | null = null;
 
 /**
- * Remove the conversations kept in this browser: everyone's, or everyone's but ``keep``'s.
- *
- * What people ask an assistant about their wiki can be sensitive, and it is kept here, in a
- * browser the next person may use. So it goes when the person signs out, when an
- * administrator starts or stops viewing as someone else, and - for any other way a session
- * ends (it expired, the window was just closed) - the next time a chat opens, which removes
- * every conversation but its own owner's. Wiping everything also stops later writes (a reply
- * still arriving must not bring the chat back) until a conversation is loaded again.
- * Preferences (width, level of detail) hold nothing of what was asked and stay.
+ * Keep the conversations only in this page, not in the browser: while an administrator views the
+ * wiki as someone else, nothing of what is asked stays, nor is that person's own history read.
  */
-export function clearStoredChats(keep?: string): void {
-  try {
-    const store = window.localStorage;
-    const spared = keep === undefined ? [] : [storageKey(keep), filesKey(keep)];
-    for (let index = store.length - 1; index >= 0; index -= 1) {
-      const key = store.key(index);
-      if (key?.startsWith(CHAT_KEY_PREFIX) && !spared.includes(key)) {
-        store.removeItem(key);
-      }
-    }
-  } catch {
-    // Private windows and blocked storage: there is nothing kept to remove.
-  }
-  if (keep === undefined) wiped = true;
+export function keepChatsInMemory(on: boolean): void {
+  memory = on ? (memory ?? memoryStorage()) : null;
 }
+
+/**
+ * Where the conversations are kept: the browser's storage, encrypted (see ``chat-vault``), or
+ * memory (see above); null when blocked or while there is no key.
+ */
+export function chatStorage(): Storage | null {
+  if (memory) return memory;
+  try {
+    return sealedStorage(window.localStorage);
+  } catch {
+    return null;
+  }
+}
+
+/** The box of a chat that has not been asked anything yet. */
+export const NEW_BOX = "new";
+/** What waits in a thread's question box, not yet sent: its files and its words. */
+export const filesKey = (userId: string, box: string) =>
+  chatKey(userId, "files", box);
+export const draftKey = (userId: string, box: string) =>
+  chatKey(userId, "draft", box);
+
+/** The most turns one conversation keeps: a guard against a runaway thread, not a memory limit. */
+export const CHAT_STORED_MAX = 500;
 
 const isEntry = (entry: unknown): entry is ChatEntry =>
   !!entry &&
@@ -525,44 +613,37 @@ const settled = (entry: ChatEntry): ChatEntry => {
   return entry;
 };
 
-/** The conversation kept in this browser for this person; empty when there is none or it is unreadable. */
-export function loadChat(userId: string): ChatState {
-  wiped = false;
-  try {
-    const raw = window.localStorage.getItem(storageKey(userId));
-    if (!raw) return EMPTY_CHAT;
-    const parsed: unknown = JSON.parse(raw);
-    // An earlier format was the list of turns alone.
-    const stored = Array.isArray(parsed)
-      ? { entries: parsed, slots: {} }
-      : (parsed as { entries?: unknown; slots?: unknown });
-    const entries = Array.isArray(stored.entries)
-      ? stored.entries.filter(isEntry).map(settled)
-      : [];
-    const slots: ChatSlots = {};
-    if (stored.slots && typeof stored.slots === "object") {
-      for (const [id, slot] of Object.entries(
-        stored.slots as Record<string, Partial<ChatSlot>>,
-      )) {
-        if (!slot || !Array.isArray(slot.variants)) continue;
-        const variants = slot.variants.map((tail) =>
-          Array.isArray(tail) ? tail.filter(isEntry).map(settled) : [],
-        );
-        const active = slot.active;
-        if (
-          variants.length > 1 &&
-          typeof active === "number" &&
-          active >= 0 &&
-          active < variants.length
-        ) {
-          slots[id] = { variants, active };
-        }
+/** A conversation read back from storage; empty when it is not one. */
+export function parseChatState(parsed: unknown): ChatState {
+  if (!parsed || typeof parsed !== "object") return EMPTY_CHAT;
+  // An earlier format was the list of turns alone.
+  const stored = Array.isArray(parsed)
+    ? { entries: parsed, slots: {} }
+    : (parsed as { entries?: unknown; slots?: unknown });
+  const entries = Array.isArray(stored.entries)
+    ? stored.entries.filter(isEntry).map(settled)
+    : [];
+  const slots: ChatSlots = {};
+  if (stored.slots && typeof stored.slots === "object") {
+    for (const [id, slot] of Object.entries(
+      stored.slots as Record<string, Partial<ChatSlot>>,
+    )) {
+      if (!slot || !Array.isArray(slot.variants)) continue;
+      const variants = slot.variants.map((tail) =>
+        Array.isArray(tail) ? tail.filter(isEntry).map(settled) : [],
+      );
+      const active = slot.active;
+      if (
+        variants.length > 1 &&
+        typeof active === "number" &&
+        active >= 0 &&
+        active < variants.length
+      ) {
+        slots[id] = { variants, active };
       }
     }
-    return { entries, slots };
-  } catch {
-    return EMPTY_CHAT;
   }
+  return { entries, slots };
 }
 
 const storable = (entries: ChatEntry[]) =>
@@ -570,37 +651,29 @@ const storable = (entries: ChatEntry[]) =>
     (entry) => entry.role === "user" || entry.status !== "streaming",
   );
 
-export function saveChat(userId: string, state: ChatState): void {
-  if (wiped) return;
-  try {
-    const entries = storable(state.entries).slice(-STORED_MAX);
-    if (entries.length === 0) {
-      window.localStorage.removeItem(storageKey(userId));
-      return;
-    }
-    // Only the versions of questions that are still in the conversation are worth keeping.
-    const shown = new Set(
-      entries.flatMap((entry) =>
-        entry.role === "user" && entry.slot ? [entry.slot] : [],
+/**
+ * What of a conversation is worth keeping: no reply still being written, and only the versions
+ * of questions that are still in it. Empty entries mean there is nothing to keep.
+ */
+export function storableChatState(state: ChatState): ChatState {
+  const entries = storable(state.entries).slice(-CHAT_STORED_MAX);
+  if (entries.length === 0) return EMPTY_CHAT;
+  const shown = new Set(
+    entries.flatMap((entry) =>
+      entry.role === "user" && entry.slot ? [entry.slot] : [],
+    ),
+  );
+  const slots: ChatSlots = {};
+  for (const [id, slot] of Object.entries(state.slots)) {
+    if (!shown.has(id) || slot.pending !== undefined) continue;
+    slots[id] = {
+      active: slot.active,
+      variants: slot.variants.map((tail) =>
+        storable(tail).slice(-CHAT_STORED_MAX),
       ),
-    );
-    const slots: ChatSlots = {};
-    for (const [id, slot] of Object.entries(state.slots)) {
-      if (!shown.has(id) || slot.pending !== undefined) continue;
-      slots[id] = {
-        active: slot.active,
-        variants: slot.variants.map((tail) =>
-          storable(tail).slice(-STORED_MAX),
-        ),
-      };
-    }
-    window.localStorage.setItem(
-      storageKey(userId),
-      JSON.stringify({ entries, slots }),
-    );
-  } catch {
-    // Private windows and full storage: the conversation just is not kept.
+    };
   }
+  return { entries, slots };
 }
 
 // ------------------------------------------------------------ files attached in the chat
@@ -659,10 +732,13 @@ export async function uploadChatFile(file: File): Promise<AttachedFile> {
   }
 }
 
-/** The files attached to this person's conversation in this browser. */
-export function loadAttached(userId: string): AttachedFile[] {
+/** The files waiting in a thread's question box in this browser. */
+export function loadAttached(
+  userId: string,
+  box: string = NEW_BOX,
+): AttachedFile[] {
   try {
-    const raw = window.localStorage.getItem(filesKey(userId));
+    const raw = chatStorage()?.getItem(filesKey(userId, box));
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -679,15 +755,44 @@ export function loadAttached(userId: string): AttachedFile[] {
   }
 }
 
-export function saveAttached(userId: string, files: AttachedFile[]): void {
+export function saveAttached(
+  userId: string,
+  files: AttachedFile[],
+  box: string = NEW_BOX,
+): void {
   try {
+    const store = chatStorage();
     if (files.length) {
-      window.localStorage.setItem(filesKey(userId), JSON.stringify(files));
+      store?.setItem(filesKey(userId, box), JSON.stringify(files));
     } else {
-      window.localStorage.removeItem(filesKey(userId));
+      store?.removeItem(filesKey(userId, box));
     }
   } catch {
     // Private windows and full storage: the files are just not remembered.
+  }
+}
+
+/** The words typed but not sent in a thread's question box. */
+export function loadDraft(userId: string, box: string = NEW_BOX): string {
+  try {
+    const kept = chatStorage()?.getItem(draftKey(userId, box));
+    return (kept ?? "").slice(0, CHAT_MAX_CHARS);
+  } catch {
+    return "";
+  }
+}
+
+export function saveDraft(
+  userId: string,
+  draft: string,
+  box: string = NEW_BOX,
+): void {
+  try {
+    const store = chatStorage();
+    if (draft) store?.setItem(draftKey(userId, box), draft);
+    else store?.removeItem(draftKey(userId, box));
+  } catch {
+    // Private windows and full storage: the words are just not remembered.
   }
 }
 

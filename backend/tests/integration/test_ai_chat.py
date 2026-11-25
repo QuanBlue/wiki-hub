@@ -373,3 +373,18 @@ async def test_a_gateway_failure_ends_in_an_error_event(
     events = await run(installed, owner, conversation("address of the billing server"))
 
     assert events[-1] == {"type": "error", "code": "gateway"}
+
+
+async def test_the_summary_of_a_long_thread_is_read_before_the_recent_turns(
+    installed: AsyncSession, model: Model
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Billing server", "The billing server is 10.0.0.5")
+    request = conversation("billing server address")
+    request.summary = "The person is moving the billing service."
+
+    await run(installed, owner, request)
+
+    [stream] = model.streams
+    assert [m["role"] for m in stream] == ["system", "user", "assistant", "user"]
+    assert "moving the billing service" in stream[1]["content"]

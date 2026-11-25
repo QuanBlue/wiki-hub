@@ -13,13 +13,14 @@ from fastapi import APIRouter, Depends, File, Path, Query, Response, UploadFile,
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
+from app.api.deps import CurrentSuperuser, CurrentUser, DbSession, Impersonator
 from app.core import rate_limit
 from app.core.config import settings
 from app.core.exceptions import (
     BadRequestError,
     NotFoundError,
     PayloadTooLargeError,
+    PermissionDeniedError,
     ServiceUnavailableError,
 )
 from app.db.session import get_session_factory
@@ -32,6 +33,8 @@ from app.modules.ai.actions import PlanRunner, StepInput
 from app.modules.ai.admin import AIConnectionService
 from app.modules.ai.answer import AnswerService
 from app.modules.ai.chat import ChatService
+from app.modules.ai.chat_threads import ChatThreadService
+from app.modules.ai.chat_vault import chat_storage_key
 from app.modules.ai.config import load_config
 from app.modules.ai.embedding_settings import EmbeddingSettingsService
 from app.modules.ai.help_answer import HelpAnswerService
@@ -56,8 +59,13 @@ from app.schemas.ai import (
     AnswerResult,
     AssistRequest,
     AssistResult,
+    ChatCompactRequest,
+    ChatCompactResult,
     ChatFileRead,
     ChatRequest,
+    ChatStorageKey,
+    ChatTitleRequest,
+    ChatTitleResult,
     ConnectionCreate,
     ConnectionList,
     ConnectionRead,
@@ -109,6 +117,22 @@ async def ai_status(user: CurrentUser, session: DbSession) -> AIStatus:
         enabled=(await load_config(session)).ready,
         can_configure=await PermissionService(session).is_system_admin(user),
     )
+
+
+@router.get(
+    "/chat/key",
+    response_model=ChatStorageKey,
+    summary="The signed-in person's key for the chat history kept in their browser",
+)
+async def chat_key(
+    user: CurrentUser, impersonator: Impersonator, response: Response
+) -> ChatStorageKey:
+    # An administrator viewing as someone else must not be able to read that person's chats.
+    if impersonator is not None:
+        raise PermissionDeniedError("Saved chats cannot be opened while viewing as someone else.")
+    response.headers["Cache-Control"] = "no-store"
+    key, key_id = chat_storage_key(user.id)
+    return ChatStorageKey(key=key, key_id=key_id)
 
 
 @router.post(
@@ -179,6 +203,28 @@ async def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> S
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post(
+    "/chat/title",
+    response_model=ChatTitleResult,
+    summary="Name a chat thread from its first question and answer (nothing is stored)",
+)
+async def chat_title(
+    payload: ChatTitleRequest, session: DbSession, user: CurrentUser
+) -> ChatTitleResult:
+    return await ChatThreadService(session, user).title(payload)
+
+
+@router.post(
+    "/chat/compact",
+    response_model=ChatCompactResult,
+    summary="Summarise a chat thread's older turns for its memory (nothing is stored)",
+)
+async def chat_compact(
+    payload: ChatCompactRequest, session: DbSession, user: CurrentUser
+) -> ChatCompactResult:
+    return await ChatThreadService(session, user).compact(payload)
 
 
 @router.post(

@@ -1,9 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useChat } from "@/components/chat/use-chat";
+import { DEFAULT_THREAD, useChat } from "@/components/chat/use-chat";
 import type { AnswerResult } from "@/lib/ai-answer";
 import { ChatStreamError, messagesToSend } from "@/lib/ai-chat";
+import { chatThreadKey, loadThread } from "@/lib/ai-chat-store";
 
 const streamChat = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ai-chat", async (importOriginal) => ({
@@ -343,24 +344,92 @@ describe("useChat", () => {
     });
   });
 
-  it("removes what another person left in this browser before reading its own", async () => {
-    const stored = JSON.stringify({
-      entries: [{ id: "a", role: "user", content: "mine" }],
-      slots: {},
-    });
-    window.localStorage.setItem("wikihub:chat:v1:me", stored);
-    window.localStorage.setItem("wikihub:chat:v1:someone-else", stored);
-    window.localStorage.setItem("wikihub:chat-detail", "brief");
+  it("reads only its own person's thread, and leaves other people's alone", async () => {
+    const stored = (content: string) =>
+      JSON.stringify({
+        entries: [{ id: "a", role: "user", content }],
+        slots: {},
+      });
+    window.localStorage.setItem(chatThreadKey("me", "t1"), stored("mine"));
+    window.localStorage.setItem(
+      chatThreadKey("someone-else", "t1"),
+      stored("theirs"),
+    );
 
-    const { result } = renderHook(() => useChat("me"));
+    const { result } = renderHook(() => useChat("me", "normal", null, "t1"));
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
     expect(result.current.entries.map((e) => e.content)).toEqual(["mine"]);
     expect(
-      window.localStorage.getItem("wikihub:chat:v1:someone-else"),
-    ).toBeNull();
-    expect(window.localStorage.getItem("wikihub:chat-detail")).toBe("brief");
-    window.localStorage.clear();
+      window.localStorage.getItem(chatThreadKey("someone-else", "t1")),
+    ).not.toBeNull();
+  });
+
+  it("keeps writing a reply into its own thread while another thread is shown", async () => {
+    let finish!: (result: AnswerResult) => void;
+    streamChat.mockImplementationOnce(
+      () =>
+        new Promise<AnswerResult>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result, rerender } = renderHook(
+      ({ tid }) => useChat("u1", "normal", null, tid),
+      { initialProps: { tid: "a" } },
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await act(async () => void result.current.send("in a"));
+    expect(result.current.running).toEqual(["a"]);
+
+    rerender({ tid: "b" });
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.busy).toBe(false);
+
+    await act(async () => finish(answer("done in a")));
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.running).toEqual([]);
+    expect(loadThread("u1", "a").entries.map((e) => e.content)).toEqual([
+      "in a",
+      "done in a",
+    ]);
+
+    rerender({ tid: "a" });
+    expect(result.current.entries[1]).toMatchObject({
+      content: "done in a",
+      status: "done",
+    });
+  });
+
+  it("tells once the first question of a thread has its answer, and not after", async () => {
+    streamChat
+      .mockResolvedValueOnce(answer("first"))
+      .mockResolvedValueOnce(answer("second"));
+    const onFirst = vi.fn();
+    const { result } = renderHook(() =>
+      useChat("u1", "normal", null, "t", onFirst),
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => void (await result.current.send("q1")));
+    await act(async () => void (await result.current.send("q2")));
+
+    expect(onFirst).toHaveBeenCalledTimes(1);
+    expect(onFirst).toHaveBeenCalledWith({
+      threadId: "t",
+      question: "q1",
+      answer: "first",
+    });
+  });
+
+  it("forgets a removed thread, stopping a reply under way in it", async () => {
+    streamChat.mockImplementationOnce(() => hangs());
+    const { result } = await ready();
+    await act(async () => void result.current.send("question"));
+
+    act(() => result.current.forget(DEFAULT_THREAD));
+
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.running).toEqual([]);
   });
 
   it("shows the search under way while the reply has no words yet", async () => {

@@ -380,7 +380,9 @@ export const sectionsEn: HelpSection[] = [
           <li>
             <strong>Sizing</strong>: drag the left edge of the panel to make it wider or narrower
             (double-click the edge to reset it), use the expand button for the whole page, or use the
-            arrow keys on the edge. Clicking outside the panel puts it away; your conversation stays.
+            arrow keys on the edge. In a wide panel the list of chats can be made wider or narrower
+            the same way, by its right edge. Both widths are remembered in this browser. Clicking
+            outside the panel puts it away; your conversation stays.
           </li>
           <li>
             <strong>Where answers come from</strong>: first your wiki, with numbered marks such as{" "}
@@ -491,12 +493,49 @@ export const sectionsEn: HelpSection[] = [
             it and send it. In a question of several lines the arrows move inside the text.
           </li>
           <li>
-            <strong>Your conversation</strong> is kept only in this browser, for your account, and is removed
-            when you sign out or switch account. Use{" "}
-            <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply: the question stays,
+            <strong>Chats.</strong> Each subject can have a chat of its own. <Code>New chat</Code>{" "}
+            starts one (<Kbd>Ctrl+Shift+O</Kbd> inside the panel) and the earlier ones stay in the
+            list: beside the conversation in a wide panel, otherwise behind the button at the top
+            left, with the latest ones under the chat&apos;s name. <Code>Hide chats</Code> folds the
+            list beside the conversation into a narrow strip that still starts, searches and shows
+            chats; on a narrow panel, close the list or swipe it to the left. A chat is named after
+            its first question until the AI gives it a short name (this counts against your AI
+            limit); rename it yourself by clicking its name at the top of a wide panel, with{" "}
+            <Code>Rename this chat</Code> under the name in a narrow one, or with <Code>⋯</Code> or{" "}
+            <Kbd>F2</Kbd> in the list, and your name is never replaced. Pin a chat to keep it at the
+            top. <Code>⋯</Code> also has <Code>Export to a file</Code> for that chat. What you have
+            typed but not sent, and the files waiting in the box, stay with the chat they were put
+            in. <Code>⋯</Code> or <Kbd>Delete</Kbd> removes a chat and
+            everything in it, after you confirm. <Code>Search chats</Code> (<Kbd>Ctrl+K</Kbd> while
+            the list is shown) looks through names and everything said, with or without accents,
+            and opens the chat at the message found. You can open another chat while an answer is
+            being written; a dot marks the one with a new answer.
+          </li>
+          <li>
+            <strong>Memory of a long chat.</strong> The AI reads the latest messages with each
+            question. In a long chat the older ones are summarized automatically (this also counts
+            against your AI limit), and a line <Code>Earlier messages summarized for context</Code>{" "}
+            marks where; press it to read what is remembered.
+          </li>
+          <li>
+            <strong>Where chats are kept.</strong> Only in this browser, for your account - not on
+            the server, so another computer or browser does not show them. They are stored encrypted
+            with a key that is given only to you while you are signed in: after you sign out, someone
+            looking into the browser cannot read them (names of attached files and unsent words
+            included). On a plain <Code>http</Code> address the network itself is not protected, and
+            an exported file is not encrypted. If an administrator changes the server&apos;s key, saved
+            chats cannot be read until it is put back; if the key cannot be fetched, a note says so
+            and nothing is saved or removed until you reload. They stay after you sign out; clearing the browser&apos;s data removes them, and when its storage is full the
+            oldest chats that are not pinned are dropped, with a notice naming yours that were
+            removed (export a chat you want to keep for good). On a shared computer, delete what others
+            should not find. An administrator viewing as another person neither sees that
+            person&apos;s chats nor keeps any.
+          </li>
+          <li>
+            <strong>Your conversation.</strong> <Code>Stop</Code> cancels a reply: the question stays,
             with what was written and a note that you cancelled it, and <Code>Try again</Code> asks
             it once more. Hover a question and press <Code>Answer again</Code> to get a
-            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on. The download button next to <Code>New chat</Code> saves the whole conversation as a Markdown file: every question and answer with the pages, files and web pages it was read from - handy to keep, or to share when an answer was wrong. A very long answer that had to stop says so at its end; type <Code>continue</Code> (or point out what is missing) and the rest follows. To ask several things at once - a test or a form pasted whole - keep them numbered (<Code>Question 1</Code>, <Code>Câu 2</Code>...): each is looked up on its own and answered in order under its number, with the right option of a multiple-choice question. A question can be up to 4,000 characters; a counter shows near the end. To ask about a document of your own, attach it with the paper clip next to the box (or drop or paste it there): up to 3 files per conversation, in Word, PDF, Excel, CSV, HTML, Markdown or text, 20 MB each. The assistant reads them <em>together with</em> the wiki - &ldquo;does my draft follow the policy?&rdquo; - and cites them as <Code>[f1]</Code>, <Code>[f2]</Code>; click a mark to see what was read. A file shows on the question it was sent with, and every later question of the conversation reads it too, so you attach it once. Your files come first: the answer is looked for in them before the wiki, which only completes or checks them. In a long file the assistant reads its opening and the paragraphs or table rows that match the question (a spreadsheet row keeps the service or item it belongs to). Pasting more words than the box takes attaches them as a text file instead. A count or a list over a large table on a page (&ldquo;how many criteria is BinhNT responsible for?&rdquo;) reads every row that names what you asked about, so the count covers the whole table. A name is found however the table writes it - <Code>BinhNT</Code>, <Code>BìnhNT</Code>, <Code>Binh NT</Code> or <Code>Bình NT</Code> - and counted as one, and the answer says which spellings it found. Only the words are kept, for you alone and for a day after your last question, never in the wiki; after that, attach the file again. A scanned PDF has no text to read.
+            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on. The download button at the top of the panel saves the whole conversation as a Markdown file: every question and answer with the pages, files and web pages it was read from - handy to keep, or to share when an answer was wrong. A very long answer that had to stop says so at its end; type <Code>continue</Code> (or point out what is missing) and the rest follows. To ask several things at once - a test or a form pasted whole - keep them numbered (<Code>Question 1</Code>, <Code>Câu 2</Code>...): each is looked up on its own and answered in order under its number, with the right option of a multiple-choice question. A question can be up to 4,000 characters; a counter shows near the end. To ask about a document of your own, attach it with the paper clip next to the box (or drop or paste it there): up to 3 files per conversation, in Word, PDF, Excel, CSV, HTML, Markdown or text, 20 MB each. The assistant reads them <em>together with</em> the wiki - &ldquo;does my draft follow the policy?&rdquo; - and cites them as <Code>[f1]</Code>, <Code>[f2]</Code>; click a mark to see what was read. A file shows on the question it was sent with, and every later question of the conversation reads it too, so you attach it once. Your files come first: the answer is looked for in them before the wiki, which only completes or checks them. In a long file the assistant reads its opening and the paragraphs or table rows that match the question (a spreadsheet row keeps the service or item it belongs to). Pasting more words than the box takes attaches them as a text file instead. A count or a list over a large table on a page (&ldquo;how many criteria is BinhNT responsible for?&rdquo;) reads every row that names what you asked about, so the count covers the whole table. A name is found however the table writes it - <Code>BinhNT</Code>, <Code>BìnhNT</Code>, <Code>Binh NT</Code> or <Code>Bình NT</Code> - and counted as one, and the answer says which spellings it found. Only the words are kept, for you alone and for a day after your last question, never in the wiki; after that, attach the file again. A scanned PDF has no text to read.
           </li>
           <li>
             <strong>Administrators</strong> find the switch under Administration, AI assistant,{" "}

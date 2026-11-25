@@ -308,3 +308,40 @@ async def test_a_confirmed_plan_is_run_step_by_step_as_the_person(
     assert [name for name, _ in events] == ["step", "step", "done"]
     assert all(data["ok"] for name, data in events if name == "step")
     assert events[-1][1]["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("title", {"question": "q"}),
+        ("compact", {"messages": [{"role": "user", "content": "q"}]}),
+    ],
+)
+async def test_naming_and_summarising_a_thread_need_a_signed_in_user(
+    client: AsyncClient, path: str, body: dict
+) -> None:
+    response = await client.post(f"{URL}/{path}", json=body)
+
+    assert response.status_code == 401
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("title", {"question": "  "}),
+        ("title", {"question": "y" * 4001}),
+        ("compact", {"messages": []}),
+        ("compact", {"summary": "s" * 1501, "messages": [{"role": "user", "content": "q"}]}),
+        ("compact", {"messages": [{"role": "user", "content": "q"}] * 41}),
+    ],
+)
+async def test_naming_and_summarising_a_thread_take_bounded_words(
+    client: AsyncClient, api_user: User, api_access_token: str, path: str, body: dict
+) -> None:
+    client.cookies.set("wikihub_access", api_access_token)
+
+    assert (await client.post(f"{URL}/{path}", json=body)).status_code == 422
