@@ -1,723 +1,70 @@
 "use client";
 
-import {
-  AlertTriangle,
-  Bookmark,
-  Check,
-  Clock3,
-  CodeXml,
-  Columns2,
-  ChevronDown,
-  Copy,
-  Download,
-  FileText,
-  FileUp,
-  Folder,
-  Globe,
-  FolderOpen,
-  FolderInput,
-  Eye,
-  EyeOff,
-  FileType,
-  Lock,
-  Maximize2,
-  Minimize2,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  Plus,
-  RectangleHorizontal,
-  RefreshCw,
-  Save,
-  Link2,
-  Share2,
-  Sparkles,
-  Star,
-  Tag,
-  ThumbsUp,
-  HeartPulse,
-  Network,
-  Trash2,
-  Users,
-  X,
-} from "lucide-react";
-import Link from "next/link";
-import { LikersPopover } from "@/components/comments/likers-popover";
-import { PageComments, type CommentsUser } from "@/components/comments/page-comments";
-import { SeasonalSidebarOverlay } from "@/components/seasonal/seasonal-sidebar-overlay";
+import { Pencil, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
-  useSyncExternalStore,
   useState,
-  type FormEvent,
+  useSyncExternalStore,
+  type CSSProperties,
 } from "react";
 import { toast } from "sonner";
 
-import { useSidebar } from "@/components/layout/sidebar-context";
 import { MailboxPasswordBanner } from "@/components/layout/mailbox-password-banner";
+import { useSidebar } from "@/components/layout/sidebar-context";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
-import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageContentLoading } from "@/components/pages/page-content-loading";
-import { PageHistoryModal } from "@/components/pages/page-history-modal";
-import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
-import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
-import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
-import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
-import { RelatedPagesDialog, usePageRelated } from "@/components/pages/related-pages";
-import { SpaceGraphDialog } from "@/components/pages/space-graph";
-import { SpaceHealthDialog } from "@/components/pages/space-health";
-import { SpaceTrashDialog } from "@/components/pages/space-trash";
-import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
-import { SelectionAssistant } from "@/components/pages/selection-assistant";
-import { aiStatus } from "@/lib/ai-summary";
-import { SharePageDialog } from "@/components/pages/share-page-dialog";
-import { PublicShareDialog } from "@/components/pages/public-share-dialog";
-import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
-import { CreatePageDialog } from "@/components/pages/create-page-dialog";
-import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
-import { MovePageDialog } from "@/components/pages/move-page-dialog";
-import { PagePresence } from "@/components/pages/page-presence";
-import { WatchButton } from "@/components/pages/watch-button";
-import { usePagePresence } from "@/lib/use-page-presence";
-import type { PageSavedEvent } from "@/types/api";
-import { SourceCodeEditor } from "@/components/pages/source-code-editor";
-import {
-  isAttachmentHref,
-  RichTextContent,
-  RichTextEditor,
-} from "@/components/pages/rich-text-editor";
+import { usePageRelated } from "@/components/pages/related-pages";
+import { RichTextEditor } from "@/components/pages/rich-text-editor";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { api, describeApiError } from "@/lib/api-client";
 import { downloadFile } from "@/lib/download";
-import { escapeHtml, markdownToHtml } from "@/lib/markdown-html";
 import { apiBaseUrl } from "@/lib/env";
-import { formatDate, formatTime } from "@/lib/i18n/format";
-import { useTranslation } from "@/lib/i18n/context";
-import {
-  clearLocalPageDraft,
-  discardPageDraft,
-  getLocalPageDraft,
-  getPageDraft,
-  saveLocalPageDraft,
-  savePageDraft,
-} from "@/lib/drafts";
-import { findHomePage } from "@/lib/home-page";
 import { getFontFamilyCss } from "@/lib/font-presets";
-import { matchesShortcut } from "@/lib/keyboard-shortcuts";
-import { linkNavigationTarget } from "@/lib/navigation-target";
+import { findHomePage } from "@/lib/home-page";
+import { useTranslation } from "@/lib/i18n/context";
+import { formatDate } from "@/lib/i18n/format";
+import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
+import { usePagePresence } from "@/lib/use-page-presence";
 import { cn } from "@/lib/utils";
 import type {
-  PageContentFormat,
-  PageDraft,
-  Group,
-  PageAttachmentUpload,
-  Space,
-  SpaceVisibility,
-  SpaceMember,
-  WikiPage,
+  InstanceInfo,
   PageLabel,
   PageRestoreResult,
   PageTrashResult,
   ShareSummary,
-  InstanceInfo,
+  WikiPage,
 } from "@/types/api";
-import type { CSSProperties } from "react";
+import {
+  navigationTargetOf,
+  pageAccessOf,
+  pageHref,
+} from "./workspace/content-transforms";
+import { PageEditorPane } from "./workspace/page-editor-pane";
+import { PageReaderPane } from "./workspace/page-reader-pane";
+import {
+  EMPTY_SAVED_PAGE_KEYS,
+  getSavedPageKeys,
+  savePageKeys,
+  spaceSidebarWidthStore,
+  subscribeToSavedPages,
+} from "./workspace/stores";
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  SPACE_SIDEBAR_SCROLL_PREFIX,
+  type AudienceSummary,
+  type PageLikeStatus,
+  type SpaceWorkspaceProps,
+} from "./workspace/types";
+import { usePageEditor } from "./workspace/use-page-editor";
+import { WorkspaceDialogs } from "./workspace/workspace-dialogs";
+import { WorkspaceHeader } from "./workspace/workspace-header";
+import { WorkspaceSidebar } from "./workspace/workspace-sidebar";
 
-const SPACE_SIDEBAR_WIDTH_KEY = "wikihub:space-sidebar-width";
-const SPACE_SIDEBAR_WIDTH_COOKIE = "wikihub_space_sidebar_width";
-const MIN_SIDEBAR_WIDTH = 200;
-const MAX_SIDEBAR_WIDTH = 520;
-const DEFAULT_SIDEBAR_WIDTH = 320;
-
-/**
- * Where a click would actually take the reader, or null when it takes them
- * nowhere. Exported so the unsaved-changes guard's decision can be tested
- * without standing up the whole workspace.
- */
-export function navigationTargetOf(event: MouseEvent): URL | null {
-  // An attachment link opens the preview modal and leaves the page where it
-  // is, so challenging it would be asking about a departure that is not
-  // happening. The editor's own capture listener handles the click.
-  return linkNavigationTarget(event, isAttachmentHref);
-}
-
-/**
- * Whether a page is closed to the world at large, and why. Two independent
- * things can close it - a view restriction on the page (or an ancestor) and a
- * restricted space - so the reason is spelled out rather than left to a guess.
- */
-type PageAccess = { restricted: boolean; labelKey: string };
-
-function pageAccessOf(
-  page: Pick<WikiPage, "is_restricted"> | null | undefined,
-  visibility: SpaceVisibility,
-): PageAccess {
-  const pageRestricted = page?.is_restricted === true;
-  const spaceRestricted = visibility === "restricted";
-  if (pageRestricted && spaceRestricted)
-    return {
-      restricted: true,
-      labelKey: "workspace.accessPrivatePageInRestrictedSpace",
-    };
-  if (pageRestricted)
-    return {
-      restricted: true,
-      labelKey: "workspace.accessPrivatePage",
-    };
-  if (spaceRestricted)
-    return {
-      restricted: true,
-      labelKey: "workspace.accessRestrictedSpace",
-    };
-  return {
-    restricted: false,
-    labelKey: "workspace.accessPublic",
-  };
-}
-
-function PageAccessIcon({ access }: { access: PageAccess }) {
-  const { t } = useTranslation();
-  const label = t(access.labelKey);
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      // No vertical nudge: with Inter, the middle of the line box lands between
-      // the middle of the x-height and the middle of the capitals, which is
-      // where mixed-case text reads as centred. (Measured at 14px: 1px above
-      // the lowercase middle, 0.5px below the capital middle. An earlier
-      // 0.16em nudge pushed it 1.2px / 2.7px below them, so it looked dropped.)
-      // Both states share one colour: the padlock marks what a page is, not a
-      // problem to be drawn to, and the shape already carries the difference.
-      className="text-muted-foreground inline-flex shrink-0 items-center"
-    >
-      {access.restricted ? (
-        <Lock className="size-3.5" aria-hidden />
-      ) : (
-        <Globe className="size-3.5" aria-hidden />
-      )}
-    </span>
-  );
-}
-
-const MIN_PREVIEW_SPLIT = 30;
-const MAX_PREVIEW_SPLIT = 70;
-const SAVED_PAGE_KEYS_STORAGE = "wikihub:saved-page-keys";
-const SAVED_PAGE_KEYS_EVENT = "wikihub:saved-pages-changed";
-const SPACE_SIDEBAR_SCROLL_PREFIX = "wikihub:space-sidebar-scroll:";
-let savedPageKeysSnapshot: string[] = [];
-const EMPTY_SAVED_PAGE_KEYS: string[] = [];
-
-function getSavedPageKeys(): string[] {
-  if (typeof window === "undefined") return savedPageKeysSnapshot;
-
-  try {
-    const value: unknown = JSON.parse(
-      window.localStorage.getItem(SAVED_PAGE_KEYS_STORAGE) ?? "[]",
-    );
-    const nextKeys = Array.isArray(value)
-      ? value.filter((item): item is string => typeof item === "string")
-      : [];
-    if (
-      nextKeys.length === savedPageKeysSnapshot.length &&
-      nextKeys.every((key, index) => key === savedPageKeysSnapshot[index])
-    ) {
-      return savedPageKeysSnapshot;
-    }
-    savedPageKeysSnapshot = nextKeys;
-    return savedPageKeysSnapshot;
-  } catch {
-    return savedPageKeysSnapshot;
-  }
-}
-
-function subscribeToSavedPages(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => undefined;
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(SAVED_PAGE_KEYS_EVENT, onStoreChange);
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(SAVED_PAGE_KEYS_EVENT, onStoreChange);
-  };
-}
-
-function savePageKeys(keys: string[]) {
-  savedPageKeysSnapshot = keys;
-  try {
-    window.localStorage.setItem(SAVED_PAGE_KEYS_STORAGE, JSON.stringify(keys));
-  } catch {
-    // The current session can still reflect the saved state if storage is unavailable.
-  }
-  window.dispatchEvent(new Event(SAVED_PAGE_KEYS_EVENT));
-}
-
-type PageLikeStatus = { liked_by_me: boolean; like_count: number };
-
-type EditMode = "normal" | "markdown" | "html";
-
-function formatForMode(mode: EditMode): PageContentFormat {
-  return mode === "markdown" ? "markdown" : "html";
-}
-
-
-function htmlToMarkdown(html: string): string {
-  const document = new DOMParser().parseFromString(html, "text/html");
-  const markdownBlocks = new Set(["P", "H1", "H2", "H3", "UL", "OL"]);
-  const markdownInline = new Set([
-    "A",
-    "B",
-    "BR",
-    "CODE",
-    "EM",
-    "I",
-    "LI",
-    "STRONG",
-  ]);
-  const requiresEmbeddedHtml = (element: Element): boolean =>
-    !markdownBlocks.has(element.tagName) ||
-    element.matches("[style], [colspan], [rowspan]") ||
-    Boolean(element.querySelector("[style], [colspan], [rowspan]")) ||
-    Array.from(element.querySelectorAll("*")).some(
-      (child) => !markdownInline.has(child.tagName),
-    );
-  const inline = (element: Element): string => {
-    const content = Array.from(element.childNodes)
-      .map((node) => {
-        if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
-        if (!(node instanceof Element)) return "";
-        const text = inline(node);
-        if (node.tagName === "STRONG" || node.tagName === "B")
-          return `**${text}**`;
-        if (node.tagName === "EM" || node.tagName === "I") return `_${text}_`;
-        if (node.tagName === "CODE") return `\`${text}\``;
-        if (node.tagName === "A")
-          return `[${text}](${node.getAttribute("href") ?? ""})`;
-        if (node.tagName === "BR") return "\n";
-        return text;
-      })
-      .join("");
-    return content;
-  };
-
-  return Array.from(document.body.children)
-    .map((element) => {
-      // Tables, colours, cell backgrounds, merged cells and other unsupported
-      // rich nodes stay as HTML embedded in the Markdown source.
-      if (requiresEmbeddedHtml(element)) return prettyHtml(element.outerHTML);
-      const text = inline(element).trim();
-      if (/^H[1-3]$/.test(element.tagName)) {
-        return `${"#".repeat(Number(element.tagName[1]))} ${text}`;
-      }
-      if (element.tagName === "UL") {
-        return Array.from(element.children)
-          .map((item) => `- ${inline(item).trim()}`)
-          .join("\n");
-      }
-      if (element.tagName === "OL") {
-        return Array.from(element.children)
-          .map((item, index) => `${index + 1}. ${inline(item).trim()}`)
-          .join("\n");
-      }
-      return text;
-    })
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-/** Format generated HTML source without changing its elements or attributes. */
-function prettyHtml(html: string): string {
-  const document = new DOMParser().parseFromString(html, "text/html");
-  const blockTags = new Set([
-    "BLOCKQUOTE",
-    "COL",
-    "COLGROUP",
-    "DIV",
-    "FIGURE",
-    "LI",
-    "OL",
-    "P",
-    "TABLE",
-    "TBODY",
-    "TD",
-    "TFOOT",
-    "TH",
-    "THEAD",
-    "TR",
-    "UL",
-  ]);
-
-  const openingTag = (element: Element): string => {
-    const attributes = Array.from(element.attributes)
-      .map((attribute) => ` ${attribute.name}="${escapeHtml(attribute.value)}"`)
-      .join("");
-    return `<${element.tagName.toLowerCase()}${attributes}>`;
-  };
-
-  const renderElement = (element: Element, depth: number): string[] => {
-    const indent = "  ".repeat(depth);
-    const hasBlockChildren = Array.from(element.children).some((child) =>
-      blockTags.has(child.tagName),
-    );
-
-    // Keep paragraphs and inline markup compact so their text spacing remains
-    // exactly as authored; expand only structural containers.
-    if (!hasBlockChildren) return [`${indent}${element.outerHTML}`];
-
-    const lines = [`${indent}${openingTag(element)}`];
-    for (const child of Array.from(element.childNodes)) {
-      if (child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) {
-        lines.push(`${"  ".repeat(depth + 1)}${escapeHtml(child.textContent)}`);
-      } else if (child instanceof Element) {
-        lines.push(...renderElement(child, depth + 1));
-      }
-    }
-    lines.push(`${indent}</${element.tagName.toLowerCase()}>`);
-    return lines;
-  };
-
-  return Array.from(document.body.children)
-    .flatMap((element) => renderElement(element, 0))
-    .join("\n");
-}
-
-function prettyMarkdownEmbeddedHtml(markdown: string): string {
-  return markdown.replace(
-    /<(table|blockquote|div|figure|ol|pre|ul)\b[\s\S]*?<\/\1\s*>/gi,
-    (block) => prettyHtml(block),
-  );
-}
-
-function MarkdownContent({
-  content,
-  canEditAttachments = false,
-}: {
-  content: string;
-  canEditAttachments?: boolean;
-}) {
-  return (
-    <RichTextContent
-      content={markdownToHtml(content)}
-      canEditAttachments={canEditAttachments}
-    />
-  );
-}
-
-const spaceSidebarWidthStore = {
-  subscribe(onChange: () => void): () => void {
-    window.addEventListener("storage", onChange);
-    window.addEventListener(SPACE_SIDEBAR_WIDTH_KEY, onChange);
-    return () => {
-      window.removeEventListener("storage", onChange);
-      window.removeEventListener(SPACE_SIDEBAR_WIDTH_KEY, onChange);
-    };
-  },
-  getSnapshot(): number {
-    try {
-      const stored = window.localStorage.getItem(SPACE_SIDEBAR_WIDTH_KEY);
-      if (stored !== null) {
-        const value = Number(stored);
-        if (Number.isFinite(value)) {
-          return clampWidth(value);
-        }
-      }
-    } catch {
-      // Ignore blocked storage; resizing still works for the current render.
-    }
-    const preloaded = Number.parseFloat(
-      document.documentElement.style.getPropertyValue(
-        "--wh-preloaded-space-sidebar-width",
-      ),
-    );
-    if (Number.isFinite(preloaded)) return clampWidth(preloaded);
-    return DEFAULT_SIDEBAR_WIDTH;
-  },
-  set(value: number): void {
-    const width = clampWidth(value);
-    try {
-      window.localStorage.setItem(SPACE_SIDEBAR_WIDTH_KEY, String(width));
-    } catch {
-      // The preference simply does not persist.
-    }
-    document.cookie = `${SPACE_SIDEBAR_WIDTH_COOKIE}=${width}; path=/; max-age=31536000; samesite=lax`;
-    document.documentElement.style.setProperty(
-      "--wh-preloaded-space-sidebar-width",
-      `${width}px`,
-    );
-    window.dispatchEvent(new Event(SPACE_SIDEBAR_WIDTH_KEY));
-  },
-};
-
-function clampWidth(value: number): number {
-  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, value));
-}
-
-function pageHref(spaceKey: string, slug: string): string {
-  return `/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`;
-}
-
-function formatDateAndTime(
-  value: string,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-  locale: "en" | "vi",
-): string {
-  // Throws on an unparseable value, so past this line the timestamp is valid.
-  const date = formatDate(value, locale);
-  // Imports can provide a date without a clock value. Do not invent one in
-  // the page metadata; normal WikiHub timestamps include an ISO time portion.
-  if (!/[T\s]\d{2}:\d{2}/.test(value)) return date;
-  return t("workspace.lastModifiedAt", {
-    date,
-    time: formatTime(value, locale),
-  });
-}
-
-function SpaceAvatar({ space }: { space: Space }) {
-  return (
-    <span
-      aria-hidden
-      className="bg-primary-subtle text-primary flex size-12 shrink-0 items-center justify-center rounded-md text-xl font-semibold"
-    >
-      {(space.icon || space.name.slice(0, 1)).toUpperCase()}
-    </span>
-  );
-}
-
-function SidebarLink({
-  href,
-  active,
-  children,
-  className,
-  onClick,
-}: {
-  href: string;
-  active?: boolean;
-  children: React.ReactNode;
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLAnchorElement>;
-}) {
-  return (
-    <Link
-      href={href}
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "focus-visible:ring-ring flex min-h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-        active
-          ? "bg-surface-selected text-primary font-medium"
-          : "text-foreground hover:bg-surface-hover active:bg-surface-selected",
-        className,
-      )}
-    >
-      {children}
-    </Link>
-  );
-}
-
-const TREE_EXPAND_PREFIX = "wikihub:page-tree-expanded:";
-
-function PageTree({
-  pages,
-  spaceKey,
-  activeSlug,
-}: {
-  pages: WikiPage[];
-  spaceKey: string;
-  activeSlug: string | null;
-}) {
-  const storageKey = `${TREE_EXPAND_PREFIX}${spaceKey}`;
-  const { t } = useTranslation();
-  const homePageId = findHomePage(pages, spaceKey)?.id;
-  const pagesByParent = useMemo(() => {
-    const pageIds = new Set(pages.map((page) => page.id));
-    const grouped = new Map<string | null, WikiPage[]>();
-    for (const page of pages) {
-      if (page.id === homePageId) continue;
-      const parentId =
-        page.parent_id && pageIds.has(page.parent_id)
-          ? page.parent_id === homePageId
-            ? null
-            : page.parent_id
-          : null;
-      const siblings = grouped.get(parentId) ?? [];
-      siblings.push(page);
-      grouped.set(parentId, siblings);
-    }
-    return grouped;
-  }, [homePageId, pages]);
-  const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => {
-    const activePage = pages.find((p) => p.slug === activeSlug);
-    const pageById = new Map(pages.map((p) => [p.id, p]));
-    const ancestorIds = new Set<string>();
-    let parentId = activePage?.parent_id;
-    while (parentId && !ancestorIds.has(parentId)) {
-      ancestorIds.add(parentId);
-      parentId = pageById.get(parentId)?.parent_id;
-    }
-    // Merge in whatever was already expanded before this mount, read
-    // synchronously here rather than restored in a later effect. Page
-    // routes remount this whole tree on every navigation (see the comment
-    // on SpaceWorkspace's own sidebar-scroll-restore effect), and restoring
-    // this asynchronously used to mean the tree grew *after* the parent
-    // sidebar had already measured its height and restored a scroll
-    // position against it - visibly shifting the scroll the user had just
-    // set up on every single page click. `window` is undefined during SSR,
-    // so this still only ever runs client-side; a true first-ever page load
-    // (real hydration, not a later soft navigation) has no prior session to
-    // restore from anyway, so there is nothing here for it to mismatch.
-    if (typeof window !== "undefined") {
-      try {
-        const saved = window.sessionStorage.getItem(storageKey);
-        const ids: unknown = saved ? JSON.parse(saved) : null;
-        if (Array.isArray(ids)) {
-          for (const id of ids as string[]) ancestorIds.add(id);
-        }
-      } catch {
-        // Ignore storage errors.
-      }
-    }
-    return ancestorIds;
-  });
-
-  // Persist expansion state whenever it changes.
-  useEffect(() => {
-    try {
-      window.sessionStorage.setItem(
-        storageKey,
-        JSON.stringify([...expandedPageIds]),
-      );
-    } catch {
-      // Ignore storage errors.
-    }
-  }, [expandedPageIds, storageKey]);
-
-  // Defensive only: the initializer above already covers the normal case
-  // (a fresh mount per navigation). This keeps the active page's ancestors
-  // expanded if `pages`/`activeSlug` ever change on an *already-mounted*
-  // instance instead.
-  useEffect(() => {
-    const activePage = pages.find((page) => page.slug === activeSlug);
-    const pageById = new Map(pages.map((page) => [page.id, page]));
-    const idsToExpand = new Set<string>();
-    let parentId = activePage?.parent_id;
-
-    while (parentId && !idsToExpand.has(parentId)) {
-      idsToExpand.add(parentId);
-      parentId = pageById.get(parentId)?.parent_id;
-    }
-
-    // Also expand the active page itself if it has children so they are
-    // immediately visible when the user navigates to a parent page.
-    if (activePage && (pagesByParent.get(activePage.id)?.length ?? 0) > 0) {
-      idsToExpand.add(activePage.id);
-    }
-
-    if (idsToExpand.size === 0) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- expand ancestors discovered from the loaded page tree
-    setExpandedPageIds((current) => {
-      const next = new Set(current);
-      for (const pageId of idsToExpand) next.add(pageId);
-      return next;
-    });
-  }, [activeSlug, pages, pagesByParent]);
-
-  function togglePage(pageId: string) {
-    setExpandedPageIds((current) => {
-      const next = new Set(current);
-      if (next.has(pageId)) {
-        next.delete(pageId);
-      } else {
-        next.add(pageId);
-      }
-      return next;
-    });
-  }
-
-  function renderPages(parentId: string | null): React.ReactNode {
-    return (pagesByParent.get(parentId) ?? []).map((page) => {
-      const children = pagesByParent.get(page.id) ?? [];
-      const hasChildren = children.length > 0;
-      const expanded = expandedPageIds.has(page.id);
-      const active = activeSlug === page.slug;
-      return (
-        <li key={page.id}>
-          {/* The icon lives inside the link so the active/hover highlight (and
-              the seasonal rail styling, which targets the link) covers it and
-              it inherits the link's colour. The toggle button is an invisible
-              keyboard-focusable overlay; pointer clicks on the icon area are
-              routed to it from the link. */}
-          <div className="relative flex min-h-8 items-stretch">
-            <SidebarLink
-              href={pageHref(spaceKey, page.slug)}
-              active={active}
-              className="min-w-0 flex-1 gap-0 rounded-md px-0 pr-2"
-              onClick={(event) => {
-                if (
-                  hasChildren &&
-                  (event.target as HTMLElement).closest("[data-tree-icon]")
-                ) {
-                  event.preventDefault();
-                  togglePage(page.id);
-                }
-              }}
-            >
-              <span
-                data-tree-icon=""
-                className="flex w-8 shrink-0 items-center justify-center self-stretch"
-                aria-hidden
-              >
-                {hasChildren ? (
-                  expanded ? (
-                    <FolderOpen className="size-4" />
-                  ) : (
-                    <Folder className="size-4" />
-                  )
-                ) : (
-                  <FileText className="size-4" />
-                )}
-              </span>
-              <span className="truncate">{page.title}</span>
-            </SidebarLink>
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() => togglePage(page.id)}
-                aria-expanded={expanded}
-                aria-label={t(
-                  expanded
-                    ? "workspace.collapseFolderAria"
-                    : "workspace.expandFolderAria",
-                  { title: page.title },
-                )}
-                className="focus-visible:ring-ring pointer-events-none absolute inset-y-0 left-0 w-8 rounded-md focus-visible:ring-2 focus-visible:outline-none"
-              />
-            ) : null}
-          </div>
-          {hasChildren && expanded ? (
-            <ul className="space-y-0.5 pl-4">{renderPages(page.id)}</ul>
-          ) : null}
-        </li>
-      );
-    });
-  }
-
-  return <>{renderPages(null)}</>;
-}
+export { navigationTargetOf };
 
 export function SpaceWorkspace({
   space,
@@ -729,20 +76,9 @@ export function SpaceWorkspace({
   canEdit,
   canExport,
   canManageRestrictions,
+  isSystemAdmin = false,
   currentUser,
-}: {
-  space: Space;
-  pages: WikiPage[];
-  members: SpaceMember[];
-  groups: Group[];
-  currentPage?: WikiPage | null;
-  initialSidebarWidth?: number;
-  canEdit: boolean;
-  canExport: boolean;
-  canManageRestrictions: boolean;
-  /** Who is reading; enables the comments section under a page. */
-  currentUser?: CommentsUser;
-}) {
+}: SpaceWorkspaceProps) {
   const router = useRouter();
   const spaceSidebarScrollRef = useRef<HTMLDivElement>(null);
   const { t, locale } = useTranslation();
@@ -759,27 +95,17 @@ export function SpaceWorkspace({
   const [pageLabels, setPageLabels] = useState<PageLabel[]>([]);
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [favoritePending, setFavoritePending] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editMode, setEditMode] = useState<EditMode>("normal");
-  const [conversionMode, setConversionMode] = useState<EditMode | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewSplit, setPreviewSplit] = useState(50);
-  // "split" keeps the editor beside the preview; "full" hands the whole width
-  // to the preview so a page can be read the way it will actually look. The
-  // editor stays mounted either way - unmounting it would throw away the
-  // caret and the undo history every time the layout changed.
-  const [previewLayout, setPreviewLayout] = useState<"split" | "full">("split");
-  const splitPreview = previewing && previewLayout === "split";
-  const fullPreview = previewing && previewLayout === "full";
+
   const currentPageAccess = useMemo(
     () => pageAccessOf(currentPage, space.visibility),
     [currentPage, space.visibility],
   );
   const [viewFullWidth, setViewFullWidth] = useState(true);
+
   // Who can actually read what is on screen - the page after its own and
   // inherited restrictions, or the space - rather than the old explicit
   // member list, which an Open space (everyone has access) left at 1.
-  const [audience, setAudience] = useState<{ users: number; groups: number; everyone: boolean } | null>(null);
+  const [audience, setAudience] = useState<AudienceSummary | null>(null);
   const audienceUrl = currentPage
     ? `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/audience`
     : `/api/v1/spaces/${encodeURIComponent(space.key)}/audience`;
@@ -787,7 +113,7 @@ export function SpaceWorkspace({
   useEffect(() => {
     let active = true;
     api
-      .get<{ users: number; groups: number; everyone: boolean }>(audienceUrl)
+      .get<AudienceSummary>(audienceUrl)
       .then((next) => {
         if (active) setAudience(next);
       })
@@ -800,6 +126,7 @@ export function SpaceWorkspace({
     // Re-count when the page or its access settings change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audienceKey]);
+
   // Where `PageComments` portals its composer - see the sticky slot at the
   // end of the article.
   const [composerSlot, setComposerSlot] = useState<HTMLDivElement | null>(null);
@@ -818,6 +145,7 @@ export function SpaceWorkspace({
       root.style.removeProperty("--wh-bottom-dock");
     };
   }, [composerSlot]);
+
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
     like_count: 0,
@@ -828,6 +156,7 @@ export function SpaceWorkspace({
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [publicShareDialogOpen, setPublicShareDialogOpen] = useState(false);
   const [publicSharesEnabled, setPublicSharesEnabled] = useState(true);
+  const [trashDays, setTrashDays] = useState(30);
 
   useEffect(() => {
     let active = true;
@@ -848,6 +177,7 @@ export function SpaceWorkspace({
       active = false;
     };
   }, []);
+
   const [pinned, setPinned] = useState(false);
   const [pinPending, setPinPending] = useState(false);
   const savedPageKeys = useSyncExternalStore(
@@ -855,33 +185,8 @@ export function SpaceWorkspace({
     getSavedPageKeys,
     () => EMPTY_SAVED_PAGE_KEYS,
   );
-  const [draftContent, setDraftContent] = useState("");
-  const [markdownDraft, setMarkdownDraft] = useState("");
-  const [titleDraft, setTitleDraft] = useState("");
-  const [savePending, setSavePending] = useState(false);
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
-  const [draftNowPending, setDraftNowPending] = useState(false);
-  // Content (HTML or Markdown, whichever mode is active) last stored as a
-  // draft this session. Drafts hold no title, so only content is compared.
-  const [draftSavedContent, setDraftSavedContent] = useState<string | null>(
-    null,
-  );
-  const [autoSaveStatus, setAutoSaveStatus] = useState<
-    "idle" | "saving" | "saved"
-  >("idle");
-  const autoSaveInFlight = useRef(false);
-  const autoSaveResetTimer = useRef<number | null>(null);
-  const draftSaveTimer = useRef<number | null>(null);
-  const draftSaveInFlight = useRef<Promise<boolean> | null>(null);
-  const allowUnload = useRef(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [recoveryDraft, setRecoveryDraft] = useState<PageDraft | null>(null);
-  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
-  const [discardDraftPending, setDiscardDraftPending] = useState(false);
   const [deletePageOpen, setDeletePageOpen] = useState(false);
-  // How long a deleted page waits in the Trash: said in the delete prompt. The
-  // instance setting is read the first time the prompt opens.
-  const [trashDays, setTrashDays] = useState(30);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
   const [pageAccessOpen, setPageAccessOpen] = useState(false);
@@ -889,18 +194,55 @@ export function SpaceWorkspace({
   const [trashOpen, setTrashOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   const [relatedOpen, setRelatedOpen] = useState(false);
-  const [conflictNotice, setConflictNotice] = useState<PageSavedEvent | null>(null);
-  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
+
+  async function shareCurrentPage() {
+    const url = window.location.href;
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(url);
+          copied = true;
+        } catch {
+          // Fall back for browsers that expose Clipboard but deny permission.
+        }
+      }
+      if (!copied) {
+        const field = document.createElement("textarea");
+        field.value = url;
+        field.setAttribute("readonly", "");
+        field.className = "sr-only";
+        document.body.appendChild(field);
+        field.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(field);
+        if (!copied) throw new Error(t("workspace.clipboardUnavailable"));
+      }
+      toast.success(t("workspace.linkCopied"));
+    } catch {
+      toast.error(t("workspace.linkCopyError"));
+    }
+  }
+
+  const editor = usePageEditor({
+    space,
+    currentPage,
+    canEdit,
+    onShareCurrentPage: shareCurrentPage,
+    onOpenLabelsDialog: () => setLabelsDialogOpen(true),
+  });
 
   const { activeUsers } = usePagePresence({
     spaceKey: space.key,
     pageSlug: currentPage?.slug,
-    editing,
+    editing: editor.editing,
     currentUserId: currentUser?.id,
     onPageSaved: (savedEvent) => {
-      if (editing) {
-        setConflictNotice(savedEvent);
+      if (editor.editing) {
+        editor.setConflictNotice(savedEvent);
       }
     },
   });
@@ -930,66 +272,11 @@ export function SpaceWorkspace({
   // superuser bypass of its own.
   const canAdmin =
     space.my_role === "admin" || space.my_permissions?.includes("admin") === true;
+  const canManageTemplates = Boolean(isSystemAdmin || space.is_owner || canAdmin);
   // Whoever may delete pages here (all of them, or only their own) has a Trash to look in.
   const canUseTrash =
     canAdmin ||
     space.my_permissions?.some((p) => p === "delete" || p === "delete_own") === true;
-  const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const [reloadPending, setReloadPending] = useState(false);
-  const [cancelEditPending, setCancelEditPending] = useState(false);
-  const [overviewEditing, setOverviewEditing] = useState(false);
-  const [overviewDraft, setOverviewDraft] = useState(space.description);
-  const [overviewSavePending, setOverviewSavePending] = useState(false);
-  const pageEditBaseline = useRef({ html: "", markdown: "", title: "" });
-  const pageEditDirtyRef = useRef(false);
-  const overviewEditBaseline = useRef(space.description);
-  const latestPageDraft = useRef({
-    currentPage,
-    draftContent,
-    markdownDraft,
-    titleDraft,
-    editMode,
-  });
-  latestPageDraft.current = {
-    currentPage,
-    draftContent,
-    markdownDraft,
-    titleDraft,
-    editMode,
-  };
-
-  useEffect(() => {
-    if (!currentPage || !currentPage.can_edit) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear page-scoped recovery state when navigation changes page
-      setRecoveryDraft(null);
-      return;
-    }
-
-    let active = true;
-    void getPageDraft(space.key, currentPage.slug)
-      .then((draft) => {
-        if (!active) return;
-        const localDraft = getLocalPageDraft(space.key, currentPage.slug);
-        if (localDraft && (!draft || localDraft.saved_at > draft.updated_at)) {
-          setRecoveryDraft({
-            ...localDraft,
-            id: `local-${currentPage.id}`,
-            page_id: currentPage.id,
-            updated_at: localDraft.saved_at,
-            is_conflict: localDraft.base_updated_at !== currentPage.updated_at,
-          });
-          return;
-        }
-        setRecoveryDraft(draft);
-      })
-      .catch(() => {
-        if (active) setRecoveryDraft(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [currentPage?.can_edit, currentPage?.slug, space.key]);
 
   const [showHeader, setShowHeader] = useState(true);
   const [isSticky, setIsSticky] = useState(false);
@@ -1089,33 +376,14 @@ export function SpaceWorkspace({
     ? savedPageKeys.includes(savedPageKey)
     : false;
   const liked = likeStatus.liked_by_me;
-  const pageEditDirty =
-    editing &&
-    Boolean(currentPage) &&
-    (titleDraft !== pageEditBaseline.current.title ||
-      (editMode === "markdown"
-        ? markdownDraft !== pageEditBaseline.current.markdown
-        : draftContent !== pageEditBaseline.current.html));
-  pageEditDirtyRef.current = pageEditDirty;
-  const currentEditContent = editMode === "markdown" ? markdownDraft : draftContent;
-  // Enabled only while there is content the stored draft does not already have.
-  const draftDirty =
-    pageEditDirty &&
-    (editMode === "markdown"
-      ? markdownDraft !== pageEditBaseline.current.markdown
-      : draftContent !== pageEditBaseline.current.html) &&
-    currentEditContent !== draftSavedContent;
-  const overviewEditDirty =
-    overviewEditing && overviewDraft !== overviewEditBaseline.current;
-  const hasUnsavedChanges = pageEditDirty || overviewEditDirty;
-  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
-  hasUnsavedChangesRef.current = hasUnsavedChanges;
+
   // A page without archived author metadata must remain unknown. Falling back
   // to the space creator made restored legacy pages appear to have been
   // created and updated by the administrator who owns that space.
   const author = currentPage ? currentPage.created_by_username : space.created_by_username;
   const updatedBy = currentPage ? currentPage.updated_by_username : space.created_by_username;
   const updatedAt = currentPage?.updated_at ?? space.updated_at;
+
   const breadcrumbPages = useMemo(() => {
     if (!currentPage) return [];
 
@@ -1134,448 +402,6 @@ export function SpaceWorkspace({
 
     return [...ancestors, currentPage];
   }, [currentPage, pages]);
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-
-    const message = t("workspace.leaveWithoutSavingMessage");
-    const confirmUnload = (event: BeforeUnloadEvent) => {
-      if (allowUnload.current) return;
-      // The debounce timer may not have fired before a refresh or tab close.
-      // Keep the newest editor state in flight while the document unloads.
-      void persistDraft({ keepalive: true });
-      event.preventDefault();
-      event.returnValue = message;
-    };
-    const confirmInternalNavigation = (event: MouseEvent) => {
-      const destination = navigationTargetOf(event);
-      if (!destination) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setLeaveHref(destination.href);
-    };
-
-    window.addEventListener("beforeunload", confirmUnload);
-    document.addEventListener("click", confirmInternalNavigation, true);
-    return () => {
-      window.removeEventListener("beforeunload", confirmUnload);
-      document.removeEventListener("click", confirmInternalNavigation, true);
-    };
-  }, [hasUnsavedChanges, t]);
-
-  function leaveWithoutSaving() {
-    if (cancelEditPending) {
-      setCancelEditPending(false);
-      if (draftSaveTimer.current !== null) {
-        window.clearTimeout(draftSaveTimer.current);
-        draftSaveTimer.current = null;
-      }
-      void discardCurrentDraft().finally(() => cancelEditing());
-      return;
-    }
-    if (reloadPending) {
-      setReloadPending(false);
-      void persistDraft().finally(() => {
-        allowUnload.current = true;
-        window.location.reload();
-      });
-      return;
-    }
-    if (!leaveHref) return;
-    const destination = new URL(leaveHref, window.location.href);
-    setLeaveHref(null);
-    void persistDraft().finally(() => navigateTo(destination));
-  }
-
-  function navigateTo(destination: URL) {
-    if (destination.origin === window.location.origin) {
-      router.push(
-        `${destination.pathname}${destination.search}${destination.hash}`,
-      );
-    } else {
-      window.location.assign(destination.href);
-    }
-  }
-
-  async function saveBeforeLeave() {
-    const saved = await persistPage();
-    if (!saved) return;
-
-    const destinationHref = leaveHref;
-    const shouldReload = reloadPending;
-    const shouldCancel = cancelEditPending;
-    setLeaveHref(null);
-    setReloadPending(false);
-    setCancelEditPending(false);
-
-    if (shouldCancel) {
-      cancelEditing();
-      router.refresh();
-      return;
-    }
-    if (shouldReload) {
-      allowUnload.current = true;
-      window.location.reload();
-      return;
-    }
-    if (!destinationHref) return;
-    const destination = new URL(destinationHref, window.location.href);
-    if (destination.origin === window.location.origin) {
-      router.push(
-        `${destination.pathname}${destination.search}${destination.hash}`,
-      );
-    } else {
-      window.location.assign(destination.href);
-    }
-  }
-
-  function requestCancelEditing() {
-    if (!hasUnsavedChanges) {
-      cancelEditing();
-      return;
-    }
-    setCancelEditPending(true);
-  }
-
-  async function persistDraft({
-    keepalive = false,
-  }: { keepalive?: boolean } = {}): Promise<boolean> {
-    // A loop, not a single await: two callers waiting on the same request
-    // would otherwise both wake and send in parallel (the debounce timer and
-    // the Save draft button, say).
-    while (draftSaveInFlight.current) {
-      await draftSaveInFlight.current;
-    }
-
-    const {
-      currentPage: page,
-      draftContent: htmlDraft,
-      markdownDraft: markdownSource,
-      editMode: mode,
-    } = latestPageDraft.current;
-    if (!page || !pageEditDirtyRef.current) return true;
-
-    const savedContent = mode === "markdown" ? markdownSource : htmlDraft;
-    const contentFormat = formatForMode(mode);
-    const request = savePageDraft(
-      space.key,
-      page.slug,
-      {
-        content: savedContent,
-        content_format: contentFormat,
-        edit_mode: mode,
-        base_updated_at: page.updated_at,
-      },
-      { keepalive },
-    )
-      .then((savedDraft) => {
-        setDraftSavedContent(savedContent);
-        setRecoveryDraft(
-          savedDraft ?? {
-            id: `local-${page.id}`,
-            page_id: page.id,
-            content: savedContent,
-            content_format: contentFormat,
-            edit_mode: mode,
-            base_updated_at: page.updated_at,
-            updated_at: new Date().toISOString(),
-            is_conflict: false,
-          },
-        );
-        return true;
-      })
-      .catch(() => false);
-    draftSaveInFlight.current = request;
-    try {
-      return await request;
-    } finally {
-      if (draftSaveInFlight.current === request) {
-        draftSaveInFlight.current = null;
-      }
-    }
-  }
-
-  async function discardCurrentDraft(): Promise<void> {
-    const page = latestPageDraft.current.currentPage;
-    if (!page) return;
-    if (draftSaveInFlight.current) {
-      await draftSaveInFlight.current;
-    }
-    try {
-      await discardPageDraft(space.key, page.slug);
-      clearLocalPageDraft(space.key, page.slug);
-      setRecoveryDraft(null);
-    } catch {
-      toast.error(t("workspace.discardDraftError"));
-    }
-  }
-
-  function openRecoveryDraft() {
-    if (!currentPage || !recoveryDraft) return;
-    // Recovered drafts always reopen in the rich-text editor. The source
-    // editor remains an explicit user choice for a fresh edit session.
-    const mode = "normal" as const;
-    const markdown =
-      recoveryDraft.content_format === "markdown"
-        ? recoveryDraft.content
-        : htmlToMarkdown(recoveryDraft.content);
-    const html =
-      recoveryDraft.content_format === "markdown"
-        ? markdownToHtml(recoveryDraft.content)
-        : recoveryDraft.content;
-    const serverMarkdown =
-      currentPage.content_format === "markdown"
-        ? prettyMarkdownEmbeddedHtml(currentPage.content)
-        : htmlToMarkdown(currentPage.content);
-    const serverHtml =
-      currentPage.content_format === "markdown"
-        ? markdownToHtml(currentPage.content)
-        : currentPage.content;
-
-    setDraftContent(html);
-    setMarkdownDraft(markdown);
-    setTitleDraft(currentPage.title);
-    latestPageDraft.current.draftContent = html;
-    latestPageDraft.current.markdownDraft = markdown;
-    latestPageDraft.current.titleDraft = currentPage.title;
-    latestPageDraft.current.editMode = mode;
-    pageEditBaseline.current = {
-      html: serverHtml,
-      markdown: serverMarkdown,
-      title: currentPage.title,
-    };
-    pageEditDirtyRef.current =
-      html !== serverHtml || markdown !== serverMarkdown;
-    setEditMode(mode);
-    setPreviewing(false);
-    setEditing(true);
-  }
-
-  function updateTitleDraft(nextTitle: string) {
-    latestPageDraft.current.titleDraft = nextTitle;
-    pageEditDirtyRef.current = nextTitle !== pageEditBaseline.current.title;
-    setTitleDraft(nextTitle);
-  }
-
-  function updateDraftContent(nextContent: string) {
-    latestPageDraft.current.draftContent = nextContent;
-    pageEditDirtyRef.current = nextContent !== pageEditBaseline.current.html;
-    if (currentPage) {
-      saveLocalPageDraft(space.key, currentPage.slug, {
-        content: nextContent,
-        content_format: formatForMode(editMode),
-        edit_mode: editMode,
-        base_updated_at: currentPage.updated_at,
-      });
-    }
-    setDraftContent(nextContent);
-  }
-
-  async function uploadPageAttachment(
-    file: File,
-  ): Promise<PageAttachmentUpload> {
-    if (!currentPage)
-      throw new Error(t("workspace.uploadNeedsPage"));
-    const form = new FormData();
-    form.append("file", file);
-    return api.post<PageAttachmentUpload>(
-      `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/attachments`,
-      undefined,
-      { rawBody: form },
-    );
-  }
-
-  function updateMarkdownDraft(nextContent: string) {
-    latestPageDraft.current.markdownDraft = nextContent;
-    pageEditDirtyRef.current =
-      nextContent !== pageEditBaseline.current.markdown;
-    if (currentPage) {
-      saveLocalPageDraft(space.key, currentPage.slug, {
-        content: nextContent,
-        content_format: formatForMode(editMode),
-        edit_mode: editMode,
-        base_updated_at: currentPage.updated_at,
-      });
-    }
-    setMarkdownDraft(nextContent);
-  }
-
-  async function discardRecoveryDraft() {
-    if (!currentPage) return;
-    setDiscardDraftPending(true);
-    try {
-      await discardPageDraft(space.key, currentPage.slug);
-      clearLocalPageDraft(space.key, currentPage.slug);
-      setRecoveryDraft(null);
-      setDiscardDraftOpen(false);
-      toast.success(t("workspace.draftDiscarded"));
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : t("workspace.discardDraftError"),
-      );
-    } finally {
-      setDiscardDraftPending(false);
-    }
-  }
-
-  async function saveDraftNow(): Promise<boolean> {
-    if (draftNowPending) return false;
-    setDraftNowPending(true);
-    try {
-      const saved = await persistDraft();
-      if (saved) toast.success(t("workspace.draftSaved"));
-      else toast.error(t("workspace.draftSaveError"));
-      return saved;
-    } finally {
-      setDraftNowPending(false);
-    }
-  }
-
-  // Cancel dialog: keep the edits as a draft, then close the editor. A failed
-  // save keeps the dialog open so nothing is lost.
-  async function saveDraftAndCancel() {
-    if (draftSaveTimer.current !== null) {
-      window.clearTimeout(draftSaveTimer.current);
-      draftSaveTimer.current = null;
-    }
-    if (draftDirty && !(await saveDraftNow())) return;
-    setCancelEditPending(false);
-    cancelEditing();
-  }
-
-  useEffect(() => {
-    setDraftSavedContent(null);
-  }, [editing, currentPage?.slug]);
-
-  function markAutoSaveStatus(status: "idle" | "saving" | "saved") {
-    if (autoSaveResetTimer.current !== null) {
-      window.clearTimeout(autoSaveResetTimer.current);
-      autoSaveResetTimer.current = null;
-    }
-    setAutoSaveStatus(status);
-    if (status === "saved") {
-      autoSaveResetTimer.current = window.setTimeout(() => {
-        setAutoSaveStatus("idle");
-        autoSaveResetTimer.current = null;
-      }, 1000);
-    }
-  }
-
-  useEffect(() => {
-    if (!editing || !autoSaveEnabled) return;
-
-    const interval = window.setInterval(() => {
-      if (!hasUnsavedChangesRef.current || autoSaveInFlight.current) return;
-      markAutoSaveStatus("saving");
-      void persistDraft().then((saved) => {
-        markAutoSaveStatus(saved ? "saved" : "idle");
-      });
-    }, 30_000);
-
-    return () => window.clearInterval(interval);
-  }, [autoSaveEnabled, editing]);
-
-  useEffect(() => {
-    if (!editing) return;
-
-    const saveWithShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (matchesShortcut("page.reload", event)) {
-        event.preventDefault();
-        setReloadPending(true);
-        return;
-      }
-      if (!matchesShortcut("page.save", event)) return;
-      event.preventDefault();
-      if (!hasUnsavedChanges || savePending || autoSaveInFlight.current) return;
-
-      void persistPage();
-    };
-
-    window.addEventListener("keydown", saveWithShortcut);
-    return () => window.removeEventListener("keydown", saveWithShortcut);
-  }, [
-    currentPage,
-    draftContent,
-    editMode,
-    editing,
-    hasUnsavedChanges,
-    markdownDraft,
-    savePending,
-  ]);
-
-  useEffect(() => {
-    const handleWorkspaceShortcuts = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      const inInput =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
-
-      if (!inInput && matchesShortcut("page.copyLink", event)) {
-        if (currentPage) {
-          event.preventDefault();
-          void shareCurrentPage();
-        }
-        return;
-      }
-
-      if (!inInput && !editing && matchesShortcut("page.edit", event)) {
-        if (currentPage && canEdit && space.status === "active") {
-          event.preventDefault();
-          beginEditing(
-            currentPage.content_format === "markdown"
-              ? "markdown"
-              : currentPage.content_format === "html"
-                ? "html"
-                : "normal",
-          );
-        }
-        return;
-      }
-    };
-
-    window.addEventListener("keydown", handleWorkspaceShortcuts);
-    return () => window.removeEventListener("keydown", handleWorkspaceShortcuts);
-  }, [canEdit, currentPage, editing, space.status]);
-
-  useEffect(
-    () => () => {
-      if (autoSaveResetTimer.current !== null) {
-        window.clearTimeout(autoSaveResetTimer.current);
-      }
-      if (draftSaveTimer.current !== null) {
-        window.clearTimeout(draftSaveTimer.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!editing || !pageEditDirty || !currentPage) return;
-    // Any earlier timer was already cleared by this effect's cleanup below.
-    draftSaveTimer.current = window.setTimeout(() => {
-      void persistDraft();
-      draftSaveTimer.current = null;
-    }, 700);
-    return () => {
-      if (draftSaveTimer.current !== null) {
-        window.clearTimeout(draftSaveTimer.current);
-        draftSaveTimer.current = null;
-      }
-    };
-  }, [
-    currentPage,
-    draftContent,
-    editMode,
-    editing,
-    markdownDraft,
-    pageEditDirty,
-  ]);
 
   const compactBreadcrumbPages = useMemo<(WikiPage | null)[]>(() => {
     // Keep the immediate context around the current page while avoiding an
@@ -1710,35 +536,6 @@ export function SpaceWorkspace({
     };
   }, [currentPage]);
 
-  async function shareCurrentPage() {
-    const url = window.location.href;
-    try {
-      let copied = false;
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(url);
-          copied = true;
-        } catch {
-          // Fall back for browsers that expose Clipboard but deny permission.
-        }
-      }
-      if (!copied) {
-        const field = document.createElement("textarea");
-        field.value = url;
-        field.setAttribute("readonly", "");
-        field.className = "sr-only";
-        document.body.appendChild(field);
-        field.select();
-        copied = document.execCommand("copy");
-        document.body.removeChild(field);
-        if (!copied) throw new Error(t("workspace.clipboardUnavailable"));
-      }
-      toast.success(t("workspace.linkCopied"));
-    } catch {
-      toast.error(t("workspace.linkCopyError"));
-    }
-  }
-
   // The backend renders the real page in a headless browser, which takes a
   // few seconds. Fetch it behind a loading toast so the user sees it is
   // working, and gets the server's reason if it fails, instead of a silent
@@ -1759,190 +556,6 @@ export function SpaceWorkspace({
         { id: toastId },
       );
     }
-  }
-
-  function openEditor(mode: EditMode) {
-    if (!currentPage) return;
-    const sourceFormat = currentPage.content_format;
-    const markdown =
-      sourceFormat === "markdown"
-        ? prettyMarkdownEmbeddedHtml(currentPage.content)
-        : htmlToMarkdown(currentPage.content);
-    const html =
-      sourceFormat === "markdown"
-        ? markdownToHtml(currentPage.content)
-        : currentPage.content;
-    const nextHtml = mode === "html" ? prettyHtml(html) : html;
-    setDraftContent(nextHtml);
-    setMarkdownDraft(markdown);
-    setTitleDraft(currentPage.title);
-    latestPageDraft.current.draftContent = nextHtml;
-    latestPageDraft.current.markdownDraft = markdown;
-    latestPageDraft.current.titleDraft = currentPage.title;
-    latestPageDraft.current.editMode = mode;
-    pageEditDirtyRef.current = false;
-    pageEditBaseline.current = {
-      html: mode === "html" ? prettyHtml(html) : html,
-      markdown,
-      title: currentPage.title,
-    };
-    setAutoSaveEnabled(true);
-    markAutoSaveStatus("idle");
-    setEditMode(mode);
-    setPreviewing(false);
-    setEditing(true);
-  }
-
-  function beginEditing(mode: EditMode) {
-    if (!currentPage) return;
-    if (recoveryDraft) {
-      openRecoveryDraft();
-      return;
-    }
-    if (currentPage.content_format !== formatForMode(mode)) {
-      setConversionMode(mode);
-      return;
-    }
-    openEditor(mode);
-  }
-
-  function cancelEditing() {
-    setEditing(false);
-    setConversionMode(null);
-    setDraftContent("");
-    setMarkdownDraft("");
-    setTitleDraft("");
-    latestPageDraft.current.draftContent = "";
-    latestPageDraft.current.markdownDraft = "";
-    latestPageDraft.current.titleDraft = "";
-    pageEditDirtyRef.current = false;
-    setPreviewing(false);
-  }
-
-  function beginOverviewEditing() {
-    setOverviewDraft(space.description);
-    overviewEditBaseline.current = space.description;
-    setOverviewEditing(true);
-  }
-
-  function cancelOverviewEditing() {
-    setOverviewEditing(false);
-    setOverviewDraft(space.description);
-  }
-
-  async function saveOverview() {
-    setOverviewSavePending(true);
-    try {
-      await api.patch<Space>(
-        `/api/v1/spaces/${encodeURIComponent(space.key)}`,
-        {
-          description: overviewDraft,
-        },
-      );
-      toast.success(t("workspace.overviewUpdated"));
-      setOverviewEditing(false);
-      router.refresh();
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : t("workspace.overviewError"),
-      );
-    } finally {
-      setOverviewSavePending(false);
-    }
-  }
-
-  async function persistPage({
-    closeEditor = false,
-    announce = true,
-    force = false,
-  }: {
-    closeEditor?: boolean;
-    announce?: boolean;
-    force?: boolean;
-  } = {}) {
-    const {
-      currentPage: page,
-      draftContent: htmlDraft,
-      markdownDraft: markdownSource,
-      titleDraft: nextTitle,
-      editMode: mode,
-    } = latestPageDraft.current;
-    if (!page || autoSaveInFlight.current) return false;
-    // An emptied-out title falls back to the page's current one rather than
-    // failing the save outright - the title field enforces this visually
-    // (see the `required` input below), but autosave can still fire mid-edit
-    // with a title the user has not finished retyping.
-    const title = nextTitle.trim() || page.title;
-
-    autoSaveInFlight.current = true;
-    setSavePending(true);
-    try {
-      const updated = await api.patch<WikiPage>(
-        `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(page.slug)}`,
-        {
-          title,
-          content: mode === "markdown" ? markdownSource : htmlDraft,
-          content_format: formatForMode(mode),
-          base_updated_at: page.updated_at,
-          force,
-        },
-      );
-      setConflictNotice(null);
-      pageEditBaseline.current = {
-        html: htmlDraft,
-        markdown: markdownSource,
-        title,
-      };
-      pageEditDirtyRef.current = false;
-      clearLocalPageDraft(space.key, page.slug);
-      setRecoveryDraft(null);
-      if (announce) {
-        toast.success(t("workspace.pageSaved", { title: updated.title }));
-        // When the assistant is on, offer labels and related pages for what was
-        // just saved - offered, not run: it costs a model call.
-        void aiStatus().then((status) => {
-          if (!status?.enabled) return;
-          toast(t("ai.suggest.toast"), {
-            action: {
-              label: t("ai.suggest.toastAction"),
-              onClick: () => setLabelsDialogOpen(true),
-            },
-          });
-        });
-      }
-      if (closeEditor) {
-        setEditing(false);
-        setPreviewing(false);
-        router.refresh();
-      }
-      return true;
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        (error as { code: string }).code === "page_conflict"
-      ) {
-        setOverwriteConfirmOpen(true);
-        return false;
-      }
-      if (announce) {
-        toast.error(
-          error instanceof Error ? error.message : t("workspace.pageSaveError"),
-        );
-      }
-      return false;
-    } finally {
-      setSavePending(false);
-      autoSaveInFlight.current = false;
-    }
-  }
-
-  async function savePage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await persistPage({ closeEditor: true });
   }
 
   useEffect(() => {
@@ -2041,196 +654,36 @@ export function SpaceWorkspace({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen, setMobileOpen]);
-  const favouriteLabel = favorite
-    ? t("spaces.removeFavourite")
-    : t("spaces.addFavourite");
 
   return (
     <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))] md:overflow-hidden">
-      {mobileOpen ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={t("topbar.collapseSidebar")}
-          onClick={() => setMobileOpen(false)}
-          className="top-topbar fixed inset-x-0 bottom-0 z-30 cursor-default bg-black/40 md:hidden"
-        />
-      ) : null}
-      <aside
-        id="wikihub-sidebar"
-        data-sidebar-kind="space"
-        className={cn(
-          "shrink-0 overflow-x-hidden",
-          !dragging &&
-            "transition-[width] duration-200 ease-out motion-reduce:transition-none",
-          // A phone: a drawer sliding in from the left, under the top bar.
-          "max-md:top-topbar max-md:fixed max-md:bottom-0 max-md:left-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl",
-          "max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none",
-          mobileOpen ? "max-md:translate-x-0" : "max-md:invisible max-md:-translate-x-full",
-          "md:top-[calc(var(--wh-topbar-height)+var(--wh-banner-height,0px))] md:sticky md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))]",
-          "md:w-(--space-sidebar-width)",
-        )}
-        style={
-          {
-            "--space-sidebar-width": `${desktopSidebarWidth}px`,
-            "--space-sidebar-panel-width": `${sidebarWidth}px`,
-          } as CSSProperties
-        }
-      >
-        {showPanel ? (
-          <div className="border-border bg-surface-sunken relative flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)">
-            <SeasonalSidebarOverlay />
-            <div className="flex min-w-0 shrink-0 flex-col px-5 py-4">
-              <div className="flex items-start gap-3">
-                <SpaceAvatar space={space} />
-                <div className="min-w-0 flex-1 pt-1">
-                  <Link
-                    href={homeHref}
-                    className="hover:text-primary focus-visible:ring-ring block truncate rounded text-sm font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    {space.name}
-                  </Link>
-                  <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                    {space.key}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void toggleFavorite()}
-                  disabled={favoritePending}
-                  aria-label={favouriteLabel}
-                  aria-pressed={favorite}
-                  title={favouriteLabel}
-                  className={cn(
-                    "hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                    "disabled:pointer-events-none disabled:opacity-50",
-                    favorite
-                      ? "text-amber-500"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Star className={cn("size-4", favorite && "fill-current")} />
-                </button>
-              </div>
-
-              <div className="mt-6 flex items-center justify-between gap-2 px-2">
-                <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                  {t("workspace.pageTreeHeading")}
-                </p>
-                {space.status === "active" && canEdit ? (
-                  <div className="flex items-center gap-0.5">
-                    <CreatePageDialog
-                      spaceKey={space.key}
-                      triggerLabel=""
-                      triggerVariant="ghost"
-                      triggerSize="icon"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      title={t("workspace.importPagesTitle")}
-                      aria-label={t("workspace.importPagesTitle")}
-                      onClick={() => setImportDialogOpen(true)}
-                    >
-                      <FileUp />
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div
-              ref={spaceSidebarScrollRef}
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-4"
-            >
-              <nav aria-label={t("workspace.pageTreeAria", { name: space.name })} className="mt-2">
-                <ul className="space-y-0.5">
-                  <PageTree
-                    pages={pages}
-                    spaceKey={space.key}
-                    activeSlug={activeSlug}
-                  />
-                </ul>
-              </nav>
-            </div>
-
-            {/* Sidebar Footer: the page map for every reader, the space's Trash
-                for anyone who may delete pages here, and its content health
-                and Edit Space for its Owner or Admin. */}
-            <div className="border-border shrink-0 border-t p-3">
-              {/* Equal-width tiles, icon over label, so the row fills the
-                  sidebar however many of the four the reader may use. */}
-              <div className="grid auto-cols-fr grid-flow-col gap-1.5">
-                {[
-                  {
-                    key: "map",
-                    icon: Network,
-                    label: t("graph.mapLink"),
-                    onClick: () => setMapOpen(true),
-                    show: true,
-                  },
-                  {
-                    key: "health",
-                    icon: HeartPulse,
-                    label: t("health.link"),
-                    onClick: () => setHealthOpen(true),
-                    show: canAdmin,
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    label: t("spaces.edit"),
-                    onClick: () => setEditSpaceModalOpen(true),
-                    show: canAdmin,
-                  },
-                  {
-                    key: "trash",
-                    icon: Trash2,
-                    label: t("trash.link"),
-                    onClick: () => setTrashOpen(true),
-                    show: canUseTrash,
-                  },
-                ]
-                  .filter((action) => action.show)
-                  .map(({ key, icon: Icon, label, onClick }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      title={label}
-                      onClick={onClick}
-                      className="text-muted-foreground hover:bg-surface-selected hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex min-w-0 cursor-pointer flex-col items-center gap-1 rounded-md px-1 py-2 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden />
-                      <span className="w-full truncate text-center">{label}</span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-        {!collapsed ? (
-          <button
-            type="button"
-            aria-label={t("workspace.resizeSpaceSidebar")}
-            title={t("nav.dragToResize")}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            className={cn(
-              "group absolute top-0 right-0 hidden h-full w-3 translate-x-1/2 cursor-col-resize md:block",
-              "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-            )}
-          >
-            <span
-              className={cn(
-                "bg-border-strong absolute top-0 right-1/2 h-full w-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
-                dragging && "opacity-100",
-              )}
-            />
-          </button>
-        ) : null}
-      </aside>
+      <WorkspaceSidebar
+        space={space}
+        pages={pages}
+        homeHref={homeHref}
+        activeSlug={activeSlug}
+        canEdit={canEdit}
+        canAdmin={canAdmin}
+        canUseTrash={canUseTrash}
+        collapsed={collapsed}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        dragging={dragging}
+        setDragging={setDragging}
+        sidebarWidth={sidebarWidth}
+        desktopSidebarWidth={desktopSidebarWidth}
+        showPanel={showPanel}
+        favorite={favorite}
+        favoritePending={favoritePending}
+        toggleFavorite={toggleFavorite}
+        spaceSidebarScrollRef={spaceSidebarScrollRef}
+        onOpenImportDialog={() => setImportDialogOpen(true)}
+        onOpenMap={() => setMapOpen(true)}
+        onOpenHealth={() => setHealthOpen(true)}
+        onOpenTemplates={canManageTemplates ? () => setTemplatesOpen(true) : undefined}
+        onOpenEditSpace={() => setEditSpaceModalOpen(true)}
+        onOpenTrash={() => setTrashOpen(true)}
+      />
 
       <main
         ref={mainContainerRef}
@@ -2251,705 +704,74 @@ export function SpaceWorkspace({
         <div
           className={cn(
             "mx-auto max-w-full min-w-0 px-6 pb-5 sm:px-8 lg:px-10",
-            editing || viewFullWidth ? "max-w-none" : "max-w-6xl",
+            editor.editing || viewFullWidth ? "max-w-none" : "max-w-6xl",
           )}
         >
-          <div
-            className={cn(
-              "flex flex-wrap items-center justify-between gap-3",
-              isSticky
-                ? "transition-all duration-300"
-                : "transition-[transform,opacity,padding] duration-300",
-              "-mx-6 px-6 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10",
-              isSticky
-                ? "bg-background border-border sticky top-topbar md:top-0 z-30 border-b py-3 shadow-sm"
-                : "relative py-5",
-              showHeader
-                ? "translate-y-0 opacity-100"
-                : "pointer-events-none -translate-y-full opacity-0",
-            )}
-          >
-            <nav
-              aria-label={t("workspace.breadcrumbAria")}
-              className="min-w-0 flex-1 overflow-hidden text-sm"
-            >
-              <ol className="flex min-w-0 items-center whitespace-nowrap">
-                <li className="shrink-0">
-                  <Link
-                    href={homeHref}
-                    className="text-primary focus-visible:ring-ring rounded hover:underline focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    {t("nav.spaces")}
-                  </Link>
-                </li>
-                {compactBreadcrumbPages.map((page) => (
-                  <li
-                    key={page?.id ?? "collapsed-ancestors"}
-                    className="flex min-w-0 items-center"
-                  >
-                    <span className="text-muted-foreground mx-2 shrink-0">
-                      /
-                    </span>
-                    {page === null ? (
-                      <span
-                        className="text-muted-foreground shrink-0"
-                        aria-label={t("workspace.earlierPagesAria")}
-                      >
-                        …
-                      </span>
-                    ) : page.id === currentPage?.id ? (
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span
-                          className="text-muted-foreground max-w-56 truncate"
-                          title={page.title}
-                        >
-                          {page.title}
-                        </span>
-                        <PageAccessIcon access={currentPageAccess} />
-                      </span>
-                    ) : (
-                      <Link
-                        href={pageHref(space.key, page.slug)}
-                        title={page.title}
-                        className="text-primary focus-visible:ring-ring max-w-48 truncate rounded hover:underline focus-visible:ring-2 focus-visible:outline-none"
-                      >
-                        {page.title}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </nav>
+          <WorkspaceHeader
+            space={space}
+            currentPage={currentPage}
+            homeHref={homeHref}
+            isHomePage={isHomePage}
+            compactBreadcrumbPages={compactBreadcrumbPages}
+            currentPageAccess={currentPageAccess}
+            isSticky={isSticky}
+            showHeader={showHeader}
+            canEdit={canEdit}
+            canExport={canExport}
+            canManageRestrictions={canManageRestrictions}
+            canManageTemplates={canManageTemplates}
+            publicSharesEnabled={publicSharesEnabled}
+            overviewEditing={editor.overviewEditing}
+            overviewSavePending={editor.overviewSavePending}
+            saveOverview={editor.saveOverview}
+            cancelOverviewEditing={editor.cancelOverviewEditing}
+            beginOverviewEditing={editor.beginOverviewEditing}
+            editing={editor.editing}
+            previewing={editor.previewing}
+            setPreviewing={editor.setPreviewing}
+            autoSaveEnabled={editor.autoSaveEnabled}
+            setAutoSaveEnabled={editor.setAutoSaveEnabled}
+            autoSaveStatus={editor.autoSaveStatus}
+            markAutoSaveStatus={editor.markAutoSaveStatus}
+            savePending={editor.savePending}
+            draftNowPending={editor.draftNowPending}
+            draftDirty={editor.draftDirty}
+            pageEditDirty={editor.pageEditDirty}
+            saveDraftNow={editor.saveDraftNow}
+            requestCancelEditing={editor.requestCancelEditing}
+            beginEditing={editor.beginEditing}
+            savedForLater={savedForLater}
+            toggleSavedForLater={toggleSavedForLater}
+            pinned={pinned}
+            pinPending={pinPending}
+            togglePinned={togglePinned}
+            shareCurrentPage={shareCurrentPage}
+            exportPage={exportPage}
+            viewFullWidth={viewFullWidth}
+            setViewFullWidth={setViewFullWidth}
+            related={related}
+            onOpenSummary={() => setSummaryOpen(true)}
+            onOpenShareDialog={() => setShareDialogOpen(true)}
+            onOpenPublicShareDialog={() => setPublicShareDialogOpen(true)}
+            onOpenMovePage={() => setMovePageOpen(true)}
+            onOpenHistoryModal={() => setHistoryModalOpen(true)}
+            onOpenPageAccess={() => setPageAccessOpen(true)}
+            onOpenLabelsDialog={() => setLabelsDialogOpen(true)}
+            onOpenRelated={() => setRelatedOpen(true)}
+            onOpenAttachmentsDialog={() => setAttachmentsDialogOpen(true)}
+            onOpenSaveAsTemplate={() => setSaveAsTemplateOpen(true)}
+            onOpenDeletePage={() => setDeletePageOpen(true)}
+          />
 
-            <div className="flex flex-nowrap items-center gap-1 [&>button]:!text-sm [&>button]:!font-medium [&>div>button]:!text-sm [&>div>button]:!font-medium">
-              {overviewEditing ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => void saveOverview()}
-                    disabled={overviewSavePending}
-                  >
-                    <Check />
-                    {overviewSavePending
-                      ? t("workspace.saving")
-                      : t("common.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={cancelOverviewEditing}
-                    disabled={overviewSavePending}
-                  >
-                    <X />
-                    {t("common.cancel")}
-                  </Button>
-                </>
-              ) : editing ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setPreviewing((current) => !current)}
-                    disabled={savePending}
-                    aria-pressed={previewing}
-                  >
-                    {previewing ? <EyeOff /> : <Eye />}
-                    {previewing
-                      ? t("workspace.hideLivePreview")
-                      : t("workspace.livePreview")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={autoSaveEnabled}
-                    title={
-                      autoSaveEnabled
-                        ? t("workspace.autoSaveOnTitle")
-                        : t("workspace.autoSaveOffTitle")
-                    }
-                    onClick={() => {
-                      setAutoSaveEnabled((current) => !current);
-                      markAutoSaveStatus("idle");
-                    }}
-                    disabled={savePending}
-                    className={cn(
-                      "bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:text-foreground min-w-36",
-                      autoSaveEnabled &&
-                        "border-primary/40 bg-surface-selected text-primary hover:bg-surface-hover hover:text-primary",
-                    )}
-                  >
-                    {autoSaveStatus === "saving" ? (
-                      <RefreshCw className="animate-spin [animation-duration:1s]" />
-                    ) : autoSaveStatus === "saved" ? (
-                      <Check />
-                    ) : (
-                      <RefreshCw />
-                    )}
-                    {autoSaveStatus === "saved"
-                      ? t("workspace.autoSaveSaved")
-                      : autoSaveEnabled
-                        ? t("workspace.autoSaveOn")
-                        : t("workspace.autoSave")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    title={t("workspace.saveDraftTitle")}
-                    onClick={() => void saveDraftNow()}
-                    disabled={savePending || draftNowPending || !draftDirty}
-                    className="border-warning/50 bg-warning-bg text-warning [&:not(:disabled)]:hover:border-warning/70 [&:not(:disabled)]:hover:bg-[color:color-mix(in_oklab,var(--wh-warning)_12%,var(--surface))] active:bg-[color:color-mix(in_oklab,var(--wh-warning)_20%,var(--surface))] disabled:border-border disabled:bg-surface-hover disabled:text-muted-foreground"
-                  >
-                    <Save />
-                    {draftNowPending
-                      ? t("workspace.savingDraft")
-                      : t("workspace.saveDraft")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    form="page-editor-form"
-                    variant="primary"
-                    size="sm"
-                    disabled={savePending}
-                    aria-label={
-                      pageEditDirty
-                        ? t("workspace.saveChanges")
-                        : t("common.save")
-                    }
-                  >
-                    <Check />
-                    {savePending
-                      ? t("workspace.saving")
-                      : pageEditDirty
-                        ? t("workspace.saveDirty")
-                        : t("common.save")}
-                  </Button>
-                  <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={requestCancelEditing}
-                    disabled={savePending}
-                  >
-                    <X />
-                    {t("common.cancel")}
-                  </Button>
-                </>
-              ) : !currentPage && canEdit && space.status === "active" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={beginOverviewEditing}
-                  title={t("workspace.editOverviewTooltip")}
-                >
-                  <Pencil />
-                  {t("workspace.editOverview")}
-                </Button>
-              ) : currentPage && canEdit && space.status === "active" ? (
-                <>
-                  <CreatePageDialog
-                    spaceKey={space.key}
-                    parentPage={isHomePage ? null : currentPage}
-                    triggerLabel={
-                      isHomePage ? t("workspace.newButton") : t("workspace.createButton")
-                    }
-                    triggerTitle={
-                      isHomePage
-                        ? t("workspace.newPageTooltip")
-                        : t("workspace.createSubpageTooltip")
-                    }
-                    triggerVariant="ghost"
-                    triggerSize="sm"
-                  />
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={editing}
-                        title={t("workspace.editTooltip")}
-                      >
-                        <Pencil />
-                        {t("spaces.edit")}
-                        <ChevronDown />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="text-muted-foreground min-w-48 text-sm font-medium"
-                    >
-                      <DropdownMenuItem onSelect={() => beginEditing("normal")}>
-                        <Pencil />
-                        {t("workspace.normalEditor")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => beginEditing("markdown")}
-                      >
-                        <FileText />
-                        {t("workspace.markdownSource")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => beginEditing("html")}>
-                        <CodeXml />
-                        {t("workspace.htmlSource")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              ) : null}
-              {!editing && !overviewEditing ? (
-                <>
-                  <div className="hidden items-center gap-1 lg:flex">
-                    {currentPage ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSummaryOpen(true)}
-                        title={t("ai.summarize")}
-                        aria-label={t("ai.button")}
-                        className="hidden 2xl:inline-flex"
-                      >
-                        <Sparkles />
-                        <span className="hidden 2xl:inline">{t("ai.button")}</span>
-                      </Button>
-                    ) : null}
-                    {currentPage ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleSavedForLater}
-                        aria-pressed={savedForLater}
-                        title={savedForLater ? t("workspace.removeFromSavedTooltip") : t("workspace.saveForLaterTooltip")}
-                        aria-label={savedForLater ? t("workspace.savedToggle") : t("workspace.saveForLater")}
-                        className="hidden xl:inline-flex"
-                      >
-                        <Bookmark
-                          className={cn(
-                            savedForLater && "text-primary fill-current",
-                          )}
-                        />
-                        <span className="hidden 2xl:inline">
-                          {savedForLater
-                            ? t("workspace.savedToggle")
-                            : t("workspace.saveForLater")}
-                        </span>
-                      </Button>
-                    ) : null}
-                    {currentPage ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void togglePinned()}
-                        disabled={pinPending}
-                        aria-pressed={pinned}
-                        title={pinned ? t("workspace.unpinTooltip") : t("workspace.pinTooltip")}
-                        aria-label={pinned ? t("workspace.pinnedToggle") : t("workspace.pinPage")}
-                        className="hidden lg:inline-flex"
-                      >
-                        <Pin className={cn(pinned && "text-primary fill-current")} />
-                        <span className="hidden 2xl:inline">
-                          {pinned
-                            ? t("workspace.pinnedToggle")
-                            : t("workspace.pinPage")}
-                        </span>
-                      </Button>
-                    ) : null}
-                    <WatchButton space={space} page={currentPage} />
-                    {currentPage ? (
-                      <DropdownMenu modal={false}>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            title={t("workspace.shareTooltip")}
-                          >
-                            <Share2 />
-                            {t("workspace.share")}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className="text-muted-foreground min-w-52 text-sm font-medium"
-                        >
-                          <DropdownMenuItem
-                            onSelect={() => void shareCurrentPage()}
-                            title={t("share.copyPageLinkTooltip")}
-                          >
-                            <Link2 />
-                            {t("share.copyPageLink")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onSelect={() => setShareDialogOpen(true)}
-                            title={t("share.shareInternallyTooltip")}
-                          >
-                            <Users />
-                            {t("share.withPeople")}
-                          </DropdownMenuItem>
-                          {publicSharesEnabled ? (
-                            <DropdownMenuItem
-                              onSelect={() => setPublicShareDialogOpen(true)}
-                              title={t("share.sharePubliclyTooltip")}
-                            >
-                              <Globe />
-                              {t("share.sharePublicly")}
-                            </DropdownMenuItem>
-                          ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : (
-                      // A space overview has no page to send anyone; its
-                      // link is all there is to share.
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void shareCurrentPage()}
-                        title={t("workspace.shareOverviewTooltip")}
-                      >
-                        <Share2 />
-                        {t("workspace.share")}
-                      </Button>
-                    )}
-                  </div>
-                  {currentPage ? (
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t("workspace.moreActionsAria")}
-                          title={t("workspace.moreActionsTooltip")}
-                          className="hidden lg:inline-flex"
-                        >
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="text-muted-foreground min-w-52 text-sm font-medium"
-                      >
-                        {/* Secondary page actions collapsed into ... like a stack when the screen narrows */}
-                        <DropdownMenuItem
-                          onSelect={() => setSummaryOpen(true)}
-                          className="2xl:hidden"
-                        >
-                          <Sparkles />
-                          {t("ai.button")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={toggleSavedForLater}
-                          className="xl:hidden"
-                        >
-                          <Bookmark
-                            className={cn(
-                              savedForLater && "text-primary fill-current",
-                            )}
-                          />
-                          {savedForLater
-                            ? t("workspace.removeFromSaved")
-                            : t("workspace.saveForLater")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => void togglePinned()}
-                          disabled={pinPending}
-                          className="lg:hidden"
-                        >
-                          <Pin
-                            className={cn(pinned && "text-primary fill-current")}
-                          />
-                          {pinned
-                            ? t("workspace.pinnedToggle")
-                            : t("workspace.pinPage")}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="2xl:hidden" />
-                        {currentPage?.can_move && space.status === "active" ? (
-                          <DropdownMenuItem
-                            onSelect={() => setMovePageOpen(true)}
-                          >
-                            <FolderInput />
-                            {t("workspace.movePage")}
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuItem
-                          onSelect={() => setHistoryModalOpen(true)}
-                        >
-                          <Clock3 />
-                          {t("workspace.pageHistory")}
-                        </DropdownMenuItem>
-                        {canManageRestrictions ? (
-                          <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
-                            <Lock />
-                            {t("workspace.pageAccess")}
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
-                          <Tag />
-                          {t("workspace.labels")}
-                        </DropdownMenuItem>
-                        {related?.pages.length ? (
-                          <DropdownMenuItem onSelect={() => setRelatedOpen(true)}>
-                            <Network />
-                            {t("graph.relatedTitle")} ({related.pages.length})
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuItem
-                          onSelect={() => setAttachmentsDialogOpen(true)}
-                        >
-                          <FileText />
-                          {t("workspace.attachments")}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
-                            <Maximize2 />
-                            {t("workspace.view")}
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="w-48">
-                            <DropdownMenuItem
-                              onSelect={() => setViewFullWidth(true)}
-                            >
-                              <Maximize2 />
-                              {t("workspace.fullWidth")}
-                              {viewFullWidth ? (
-                                <Check className="text-primary ml-auto size-4" />
-                              ) : null}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={() => setViewFullWidth(false)}
-                            >
-                              <Minimize2 />
-                              {t("workspace.normalWidth")}
-                              {!viewFullWidth ? (
-                                <Check className="text-primary ml-auto size-4" />
-                              ) : null}
-                            </DropdownMenuItem>
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                        <DropdownMenuSeparator />
-                        {canExport ? (
-                          <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>
-                              <Download />
-                              {t("workspace.export")}
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
-                              <DropdownMenuItem onSelect={() => exportPage("html")}>
-                                <Download />
-                                {t("workspace.exportHtml")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => exportPage("pdf")}>
-                                <FileText />
-                                {t("workspace.exportPdf")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => exportPage("docx")}>
-                                <FileType />
-                                {t("workspace.exportWord")}
-                              </DropdownMenuItem>
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                        ) : null}
-                        {currentPage?.can_delete && space.status === "active" ? (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-danger focus:text-danger [&_svg]:text-danger"
-                              onSelect={() => setDeletePageOpen(true)}
-                            >
-                              <Trash2 className="!text-danger" />
-                              {t("workspace.deletePage")}
-                            </DropdownMenuItem>
-                          </>
-                        ) : null}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t("workspace.moreActionsAria")}
-                        title={t("workspace.moreActionsTooltip")}
-                        className="lg:hidden"
-                      >
-                        <MoreHorizontal />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="text-muted-foreground min-w-48 text-sm font-medium lg:hidden"
-                    >
-                      {currentPage ? (
-                        <DropdownMenuItem onSelect={() => setSummaryOpen(true)}>
-                          <Sparkles />
-                          {t("ai.button")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      {currentPage ? (
-                        <DropdownMenuItem onSelect={toggleSavedForLater}>
-                          <Bookmark
-                            className={cn(
-                              savedForLater && "text-primary fill-current",
-                            )}
-                          />
-                          {savedForLater
-                            ? t("workspace.removeFromSaved")
-                            : t("workspace.saveForLater")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem
-                        onSelect={() => void shareCurrentPage()}
-                        title={t("share.copyPageLinkTooltip")}
-                      >
-                        <Link2 />
-                        {t("share.copyPageLink")}
-                      </DropdownMenuItem>
-                      {currentPage ? (
-                        <DropdownMenuItem
-                          onSelect={() => setShareDialogOpen(true)}
-                          title={t("share.shareInternallyTooltip")}
-                        >
-                          <Share2 />
-                          {t("share.withPeople")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      {currentPage && publicSharesEnabled ? (
-                        <DropdownMenuItem
-                          onSelect={() => setPublicShareDialogOpen(true)}
-                          title={t("share.sharePubliclyTooltip")}
-                        >
-                          <Globe />
-                          {t("share.sharePublicly")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      {currentPage && canManageRestrictions ? (
-                        <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
-                          <Lock />
-                          {t("workspace.pageAccess")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      {currentPage ? (
-                        <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
-                          <Tag />
-                          {t("workspace.labels")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      {currentPage ? (
-                        <>
-                          <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
-                            <Pin className={cn(pinned && "text-primary fill-current")} />
-                            {pinned
-                              ? t("workspace.removeFromPinned")
-                              : t("workspace.pinPage")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {canExport ? (
-                            <DropdownMenuSub>
-                              <DropdownMenuSubTrigger>
-                                <Download />
-                                {t("workspace.export")}
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
-                                <DropdownMenuItem onSelect={() => exportPage("html")}>
-                                  <Download />
-                                  {t("workspace.exportHtml")}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => exportPage("pdf")}>
-                                  <FileText />
-                                  {t("workspace.exportPdf")}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => exportPage("docx")}>
-                                  <FileType />
-                                  {t("workspace.exportWord")}
-                                </DropdownMenuItem>
-                              </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-                          ) : null}
-                          {currentPage?.can_move && space.status === "active" ? (
-                            <DropdownMenuItem
-                              onSelect={() => setMovePageOpen(true)}
-                            >
-                              <FolderInput />
-                              {t("workspace.movePage")}
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem
-                            onSelect={() => setHistoryModalOpen(true)}
-                          >
-                            <Clock3 />
-                            {t("workspace.pageHistory")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => setAttachmentsDialogOpen(true)}
-                          >
-                            <FileText />
-                            {t("workspace.attachments")}
-                          </DropdownMenuItem>
-                          {currentPage?.can_delete && space.status === "active" ? (
-                            <DropdownMenuItem
-                              className="text-danger focus:text-danger [&_svg]:text-danger"
-                              onSelect={() => setDeletePageOpen(true)}
-                            >
-                              <Trash2 className="!text-danger" />
-                              {t("workspace.deletePage")}
-                            </DropdownMenuItem>
-                          ) : null}
-                        </>
-                      ) : null}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <Maximize2 />
-                          {t("workspace.view")}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-48">
-                          <DropdownMenuItem
-                            onSelect={() => setViewFullWidth(true)}
-                          >
-                            <Maximize2 />
-                            {t("workspace.fullWidth")}
-                            {viewFullWidth ? (
-                              <Check className="text-primary ml-auto size-4" />
-                            ) : null}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => setViewFullWidth(false)}
-                          >
-                            <Minimize2 />
-                            {t("workspace.normalWidth")}
-                            {!viewFullWidth ? (
-                              <Check className="text-primary ml-auto size-4" />
-                            ) : null}
-                          </DropdownMenuItem>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              ) : null}
-            </div>
-          </div>
-
-          {recoveryDraft && !editing && !overviewEditing ? (
+          {editor.recoveryDraft && !editor.editing && !editor.overviewEditing ? (
             <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-semibold">{t("workspace.draftNotReleased")}</p>
                 <p className="mt-0.5 text-xs">
                   {t("workspace.draftNotReleasedHint", {
-                    date: formatDate(recoveryDraft.updated_at, locale),
+                    date: formatDate(editor.recoveryDraft.updated_at, locale),
                   })}
-                  {recoveryDraft.is_conflict
+                  {editor.recoveryDraft.is_conflict
                     ? t("workspace.draftConflictSuffix")
                     : ""}
                 </p>
@@ -2959,7 +781,7 @@ export function SpaceWorkspace({
                   type="button"
                   size="sm"
                   variant="secondary"
-                  onClick={openRecoveryDraft}
+                  onClick={editor.openRecoveryDraft}
                 >
                   <Pencil />
                   {t("workspace.openEditor")}
@@ -2968,8 +790,8 @@ export function SpaceWorkspace({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() => setDiscardDraftOpen(true)}
-                  disabled={discardDraftPending}
+                  onClick={() => editor.setDiscardDraftOpen(true)}
+                  disabled={editor.discardDraftPending}
                 >
                   {t("workspace.discardDraft")}
                 </Button>
@@ -2980,704 +802,171 @@ export function SpaceWorkspace({
           <article
             className={cn(
               "mt-4 wikihub-page-content",
-              !editing &&
-                !overviewEditing &&
+              !editor.editing &&
+                !editor.overviewEditing &&
                 !viewFullWidth &&
                 "max-w-[var(--wh-content-max)]",
             )}
           >
-            {overviewEditing ? (
+            {editor.overviewEditing ? (
               <>
                 <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
                   {space.name}
                 </h1>
                 <div className="mt-6 min-w-0">
                   <RichTextEditor
-                    content={overviewDraft}
-                    onChange={setOverviewDraft}
+                    content={editor.overviewDraft}
+                    onChange={editor.setOverviewDraft}
                   />
                   <p className="text-muted-foreground mt-2 text-xs">
                     {t("workspace.charactersCount", {
-                      count: overviewDraft.length.toLocaleString(),
+                      count: editor.overviewDraft.length.toLocaleString(),
                     })}
                   </p>
                 </div>
               </>
-            ) : editing && currentPage ? (
-              <form
-                id="page-editor-form"
-                onSubmit={savePage}
-                className="space-y-5"
-                noValidate
-              >
-                {conflictNotice ? (
-                  <div className="bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200 flex flex-col gap-2 rounded-lg border p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-start gap-2.5">
-                      <AlertTriangle className="text-amber-600 dark:text-amber-400 mt-0.5 size-5 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-wider">
-                          {t("workspace.concurrentEditWarningTitle")}
-                        </p>
-                        <p className="mt-0.5 text-xs">
-                          {conflictNotice.actor_name
-                            ? t("workspace.concurrentEditWarningBody", {
-                                actor: conflictNotice.actor_name,
-                                time: conflictNotice.saved_at
-                                  ? formatTime(conflictNotice.saved_at, locale)
-                                  : "",
-                              })
-                            : t("workspace.concurrentEditWarningTitle")}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 self-end sm:self-auto">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 gap-1 text-xs"
-                        onClick={() => setHistoryModalOpen(true)}
-                      >
-                        <Clock3 className="size-3.5" />
-                        {t("workspace.viewLatestRevision")}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 gap-1 text-xs"
-                        onClick={() => {
-                          const content = editMode === "markdown" ? markdownDraft : draftContent;
-                          void navigator.clipboard.writeText(content).then(() => {
-                            toast.success(t("workspace.draftCopied"));
-                          });
-                        }}
-                      >
-                        <Copy className="size-3.5" />
-                        {t("workspace.copyMyDraft")}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="danger"
-                        className="h-7 text-xs"
-                        onClick={() => setOverwriteConfirmOpen(true)}
-                      >
-                        {t("workspace.overwriteAndSave")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : otherEditors.length > 0 ? (
-                  <div className="bg-blue-500/10 border-blue-500/20 text-blue-900 dark:text-blue-200 flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
-                    <Pencil className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
-                    <span>
-                      {t("workspace.concurrentEditingNotice", {
-                        name: otherEditors.map((u) => u.full_name).join(", "),
-                      })}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
-                    <input
-                      type="text"
-                      id="page-editor-title"
-                      aria-label={t("workspace.pageTitleAria")}
-                      value={titleDraft}
-                      onChange={(event) => updateTitleDraft(event.target.value)}
-                      maxLength={255}
-                      required
-                      className="text-foreground wikihub-page-header flex-1 min-w-[200px] rounded-md border border-transparent bg-transparent text-3xl font-semibold tracking-normal outline-none transition-colors duration-150 hover:border-border-strong focus-visible:border-border-strong focus-visible:ring-ring focus-visible:ring-2"
-                    />
-                  </div>
-                  <PagePresence users={activeUsers} className="shrink-0 pt-1" />
-                </div>
-                <div
-                  className={cn(
-                    "min-w-0",
-                    splitPreview &&
-                      "xl:grid xl:[grid-template-columns:var(--live-preview-columns)]",
-                  )}
-                  style={
-                    splitPreview
-                      ? ({
-                          "--live-preview-columns": `minmax(0, ${previewSplit}fr) 12px minmax(0, ${100 - previewSplit}fr)`,
-                        } as CSSProperties)
-                      : undefined
-                  }
-                >
-                  <div className={cn("min-w-0", fullPreview && "hidden")}>
-                    {editMode === "normal" ? (
-                      <RichTextEditor
-                        content={draftContent}
-                        onChange={updateDraftContent}
-                        onUploadFile={uploadPageAttachment}
-                        pageLinkContext={{
-                          spaceKey: space.key,
-                          currentPageId: currentPage.id,
-                        }}
-                        onSubpageCreated={(page) =>
-                          // Same "save what's here, then go" sequence this
-                          // file already uses for every other in-app
-                          // navigation away from an editing page (see
-                          // navigateTo's other callers) - the link just
-                          // inserted above needs to be part of what's saved.
-                          void persistDraft().finally(() =>
-                            navigateTo(
-                              new URL(
-                                pageHref(space.key, page.slug),
-                                window.location.href,
-                              ),
-                            ),
-                          )
-                        }
-                      />
-                    ) : (
-                      <SourceCodeEditor
-                        language={editMode}
-                        value={
-                          editMode === "markdown" ? markdownDraft : draftContent
-                        }
-                        onChange={(value) => {
-                          if (editMode === "markdown") {
-                            updateMarkdownDraft(value);
-                          } else {
-                            updateDraftContent(value);
-                          }
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  {previewing ? (
-                    <>
-                      {splitPreview ? (
-                        <button
-                          type="button"
-                          role="separator"
-                          aria-label={t("workspace.resizePreviewAria")}
-                          aria-orientation="vertical"
-                          aria-valuemin={MIN_PREVIEW_SPLIT}
-                          aria-valuemax={MAX_PREVIEW_SPLIT}
-                          aria-valuenow={previewSplit}
-                          onPointerDown={(event) => {
-                            event.currentTarget.setPointerCapture(
-                              event.pointerId,
-                            );
-                            document.body.style.cursor = "col-resize";
-                            document.body.style.userSelect = "none";
-                          }}
-                          onPointerMove={(event) => {
-                            if (
-                              !event.currentTarget.hasPointerCapture(
-                                event.pointerId,
-                              )
-                            )
-                              return;
-                            const container = event.currentTarget.parentElement;
-                            if (!container) return;
-                            const bounds = container.getBoundingClientRect();
-                            const next = Math.round(
-                              ((event.clientX - bounds.left) / bounds.width) *
-                                100,
-                            );
-                            setPreviewSplit(
-                              Math.min(
-                                MAX_PREVIEW_SPLIT,
-                                Math.max(MIN_PREVIEW_SPLIT, next),
-                              ),
-                            );
-                          }}
-                          onPointerUp={(event) => {
-                            event.currentTarget.releasePointerCapture(
-                              event.pointerId,
-                            );
-                            document.body.style.cursor = "";
-                            document.body.style.userSelect = "";
-                          }}
-                          onPointerCancel={() => {
-                            document.body.style.cursor = "";
-                            document.body.style.userSelect = "";
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "ArrowLeft") {
-                              event.preventDefault();
-                              setPreviewSplit((current) =>
-                                Math.max(MIN_PREVIEW_SPLIT, current - 2),
-                              );
-                            }
-                            if (event.key === "ArrowRight") {
-                              event.preventDefault();
-                              setPreviewSplit((current) =>
-                                Math.min(MAX_PREVIEW_SPLIT, current + 2),
-                              );
-                            }
-                            if (event.key === "Home") {
-                              event.preventDefault();
-                              setPreviewSplit(MIN_PREVIEW_SPLIT);
-                            }
-                            if (event.key === "End") {
-                              event.preventDefault();
-                              setPreviewSplit(MAX_PREVIEW_SPLIT);
-                            }
-                          }}
-                          className="group focus-visible:ring-ring relative hidden cursor-col-resize touch-none items-stretch justify-center outline-none select-none focus-visible:ring-2 focus-visible:ring-offset-2 xl:flex"
-                        >
-                          <span className="bg-border group-hover:bg-border-strong group-active:bg-primary h-full w-px transition-colors duration-150" />
-                          <span
-                            aria-hidden
-                            className="border-border-strong bg-surface-raised text-muted-foreground group-hover:border-primary group-hover:text-primary group-active:bg-primary group-active:text-primary-foreground absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded border text-xs font-semibold shadow-sm transition-[color,background-color,border-color] duration-150"
-                          >
-                            ⋮
-                          </span>
-                        </button>
-                      ) : null}
-
-                      <div
-                        className={cn(
-                          "min-w-0 xl:flex",
-                          splitPreview ? "mt-6 xl:mt-0" : "mt-0",
-                        )}
-                      >
-                        <section
-                          aria-label={t("workspace.livePreviewAria")}
-                          className="border-border bg-surface-raised min-w-0 rounded-md border shadow-sm xl:h-full xl:flex-1"
-                        >
-                          <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-1">
-                            <Eye className="text-primary size-4" aria-hidden />
-                            <p className="text-xs font-semibold tracking-wide uppercase">
-                              {t("workspace.livePreview")}
-                            </p>
-                            <span className="text-muted-foreground ml-auto hidden text-xs sm:inline">
-                              {t("workspace.updatesAsYouType")}
-                            </span>
-                            <div
-                              role="group"
-                              aria-label={t("workspace.previewLayoutAria")}
-                              className="border-border bg-surface-raised ml-auto flex items-center gap-0.5 rounded-md border p-0.5 sm:ml-3"
-                            >
-                              <Button
-                                type="button"
-                                variant={
-                                  previewLayout === "split"
-                                    ? "secondary"
-                                    : "ghost"
-                                }
-                                size="sm"
-                                className="h-6 gap-1 px-2 text-xs"
-                                aria-pressed={previewLayout === "split"}
-                                title={t("workspace.splitTitle")}
-                                onClick={() => setPreviewLayout("split")}
-                              >
-                                <Columns2 />
-                                {t("workspace.split")}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant={
-                                  previewLayout === "full"
-                                    ? "secondary"
-                                    : "ghost"
-                                }
-                                size="sm"
-                                className="h-6 gap-1 px-2 text-xs"
-                                aria-pressed={previewLayout === "full"}
-                                title={t("workspace.fullTitle")}
-                                onClick={() => setPreviewLayout("full")}
-                              >
-                                <RectangleHorizontal />
-                                {t("workspace.full")}
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="p-4">
-                            {(
-                              editMode === "markdown"
-                                ? markdownDraft
-                                : draftContent
-                            ) ? (
-                              editMode === "markdown" ? (
-                                <MarkdownContent content={markdownDraft} />
-                              ) : (
-                                <RichTextContent content={draftContent} />
-                              )
-                            ) : (
-                              <p className="text-muted-foreground text-sm">
-                                {t("workspace.nothingToPreview")}
-                              </p>
-                            )}
-                          </div>
-                        </section>
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              </form>
+            ) : editor.editing && currentPage ? (
+              <PageEditorPane
+                space={space}
+                currentPage={currentPage}
+                editMode={editor.editMode}
+                titleDraft={editor.titleDraft}
+                draftContent={editor.draftContent}
+                markdownDraft={editor.markdownDraft}
+                previewing={editor.previewing}
+                previewSplit={editor.previewSplit}
+                setPreviewSplit={editor.setPreviewSplit}
+                previewLayout={editor.previewLayout}
+                setPreviewLayout={editor.setPreviewLayout}
+                conflictNotice={editor.conflictNotice}
+                activeUsers={activeUsers}
+                otherEditors={otherEditors}
+                onSubmit={editor.savePage}
+                onUpdateTitleDraft={editor.updateTitleDraft}
+                onUpdateDraftContent={editor.updateDraftContent}
+                onUpdateMarkdownDraft={editor.updateMarkdownDraft}
+                onUploadFile={editor.uploadPageAttachment}
+                onSubpageCreated={(page) =>
+                  // Same "save what's here, then go" sequence this
+                  // file already uses for every other in-app
+                  // navigation away from an editing page (see
+                  // navigateTo's other callers) - the link just
+                  // inserted above needs to be part of what's saved.
+                  void editor.persistDraft().finally(() =>
+                    editor.navigateTo(
+                      new URL(
+                        pageHref(space.key, page.slug),
+                        window.location.href,
+                      ),
+                    ),
+                  )
+                }
+                onOpenHistoryModal={() => setHistoryModalOpen(true)}
+                onOpenOverwriteConfirm={() => editor.setOverwriteConfirmOpen(true)}
+              />
             ) : (
-              <>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-3 min-w-0">
-                    <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
-                      {title}
-                    </h1>
-                  </div>
-                  {currentPage ? (
-                    <PagePresence users={activeUsers} className="shrink-0 pt-1" />
-                  ) : null}
-                </div>
-                {/* Metadata on the left, labels on the right of the same line
-                    (wrapping below it on narrow screens). The page's Like
-                    lives with the discussion, beside the comment count - see
-                    `PageComments`' header. */}
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-                  <p className="flex flex-wrap items-center gap-1">
-                    {t("workspace.createdByPrefix")}{" "}
-                    {author ? (
-                      <UserProfileTrigger username={author} />
-                    ) : (
-                      t("workspace.unknownAuthor")
-                    )}
-                    {updatedAt ? (
-                      <>
-                        {t("workspace.lastModifiedPrefix")}{" "}
-                        {updatedBy ? (
-                          <>
-                            {t("workspace.byLabel")}{" "}
-                            <UserProfileTrigger username={updatedBy} />{" "}
-                          </>
-                        ) : null}
-                        {t("workspace.onDate", {
-                          date: formatDateAndTime(updatedAt, t, locale),
-                        })}
-                      </>
-                    ) : null}
-                  </p>
-
-                  <span className="text-muted-foreground/40 select-none" aria-hidden>•</span>
-
-                  <span className="inline-flex items-center gap-1.5">
-                    <Tag className="size-3.5 text-muted-foreground/70 shrink-0" aria-hidden />
-                    <span>
-                      {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : t("workspace.noLabels")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLabelsDialogOpen(true)}
-                      className="hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-5 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                      aria-label={t("workspace.manageLabelsAria")}
-                      title={t("workspace.manageLabelsAria")}
-                    >
-                      <Plus className="size-3" />
-                    </button>
-                  </span>
-                </div>
-
-                <div className="mt-8 min-h-64">
-                  <SelectionAssistant
-                    spaceKey={space.key}
-                    pageSlug={currentPage?.slug ?? ""}
-                  >
-                  {body ? (
-                    currentPage?.content_format === "markdown" ? (
-                      <MarkdownContent
-                        content={body}
-                        canEditAttachments={canEdit && space.status === "active"}
-                      />
-                    ) : (
-                      <RichTextContent
-                        content={body}
-                        canEditAttachments={canEdit && space.status === "active"}
-                      />
-                    )
-                  ) : (
-                    <div className="border-border bg-surface-sunken rounded-lg border border-dashed p-6">
-                      <p className="font-medium">{t("workspace.noContent")}</p>
-                      <p className="text-muted-foreground mt-1 text-sm">
-                        {t("workspace.noContentHint")}
-                      </p>
-                    </div>
-                  )}
-                  </SelectionAssistant>
-                </div>
-
-                {currentUser && currentPage ? (
-                  <PageComments
-                    spaceKey={space.key}
-                    pageSlug={currentPage.slug}
-                    currentUser={currentUser}
-                    composerContainer={composerSlot}
-                    headerStart={
-                      <span className="flex items-center">
-                        <button
-                          type="button"
-                          onClick={toggleLiked}
-                          disabled={likePending}
-                          aria-pressed={liked}
-                          aria-label={t(liked ? "workspace.unlikePageAria" : "workspace.likePageAria", {
-                            count: likeStatus.like_count,
-                          })}
-                          title={liked ? t("workspace.liked") : t("workspace.like")}
-                          className={cn(
-                            "focus-visible:ring-ring flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
-                            liked
-                              ? "text-primary hover:bg-primary-subtle active:bg-surface-selected"
-                              : "text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected",
-                          )}
-                        >
-                          <ThumbsUp className={cn("size-4.5", liked && "fill-current")} aria-hidden />
-                        </button>
-                        {/* The count opens who liked the page; the thumb toggles your own like. */}
-                        <LikersPopover
-                          url={`/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/likes`}
-                          count={likeStatus.like_count}
-                          className={cn("px-0.5 text-sm", liked ? "text-primary" : "text-muted-foreground hover:text-foreground")}
-                        />
-                      </span>
-                    }
-                    headerEnd={
-                      <span className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setShareDialogOpen(true)}
-                          aria-label={t("share.countAria", { count: shareCount })}
-                          title={t("share.title")}
-                          className="text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm tabular-nums transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                        >
-                          <Share2 className="size-4.5" aria-hidden />
-                          {shareCount}
-                        </button>
-                      </span>
-                    }
-                  />
-                ) : null}
-                {/* The comment box is portalled in here: a direct child of
-                    the article, so `sticky bottom-0` keeps it on screen for
-                    the whole page, not just while the comments are in view
-                    (sticky is confined to its parent's box). */}
-                {currentUser && currentPage ? (
-                  <div
-                    ref={setComposerSlot}
-                    className="bg-background border-border sticky bottom-0 z-20 mt-3 border-t pt-3 pb-3"
-                  />
-                ) : null}
-              </>
+              <PageReaderPane
+                space={space}
+                currentPage={currentPage}
+                currentUser={currentUser}
+                title={title}
+                body={body}
+                author={author}
+                updatedBy={updatedBy}
+                updatedAt={updatedAt}
+                canEdit={canEdit}
+                activeUsers={activeUsers}
+                pageLabels={pageLabels}
+                likeStatus={likeStatus}
+                likePending={likePending}
+                shareCount={shareCount}
+                composerSlot={composerSlot}
+                setComposerSlot={setComposerSlot}
+                onToggleLiked={toggleLiked}
+                onOpenLabelsDialog={() => setLabelsDialogOpen(true)}
+                onOpenShareDialog={() => setShareDialogOpen(true)}
+              />
             )}
           </article>
 
-          <ConfirmDialog
-            open={leaveHref !== null || reloadPending || cancelEditPending}
-            onOpenChange={(open) => {
-              if (!open) {
-                setLeaveHref(null);
-                setReloadPending(false);
-                setCancelEditPending(false);
-              }
-            }}
-            title={
-              reloadPending
-                ? t("workspace.reloadTitle")
-                : cancelEditPending
-                  ? t("workspace.cancelEditTitle")
-                  : t("workspace.leaveTitle")
-            }
-            description={
-              reloadPending
-                ? t("workspace.reloadDescription")
-                : t("workspace.leaveDescription")
-            }
-            confirmLabel={reloadPending ? t("workspace.reload") : t("workspace.saveAndLeave")}
-            cancelLabel={t("workspace.stay")}
-            secondaryLabel={
-              reloadPending
-                ? t("workspace.reloadWithoutSaving")
-                : t("workspace.leaveWithoutSaving")
-            }
-            onSecondary={leaveWithoutSaving}
-            tertiaryLabel={
-              cancelEditPending && pageEditDirty
-                ? t("workspace.saveDraftAndLeave")
-                : undefined
-            }
-            onTertiary={() => void saveDraftAndCancel()}
-            dismissOnOutsideClick={!(savePending || draftNowPending)}
-            pending={savePending || draftNowPending}
-            onConfirm={() => void saveBeforeLeave()}
-          />
-
-          <ConfirmDialog
-            open={conversionMode !== null}
-            onOpenChange={(open) => {
-              if (!open) setConversionMode(null);
-            }}
-            title={
-              conversionMode === "markdown"
-                ? t("workspace.convertMarkdownTitle")
-                : t("workspace.convertHtmlTitle")
-            }
-            description={
-              conversionMode === "markdown"
-                ? t("workspace.convertMarkdownDescription")
-                : t("workspace.convertHtmlDescription")
-            }
-            confirmLabel={t("workspace.continue")}
-            onConfirm={() => {
-              if (!conversionMode) return;
-              const mode = conversionMode;
-              setConversionMode(null);
-              openEditor(mode);
-            }}
-          />
-
-          <ConfirmDialog
-            open={discardDraftOpen}
-            onOpenChange={(open) => {
-              if (!open) setDiscardDraftOpen(false);
-            }}
-            title={t("workspace.discardDraftTitle")}
-            description={t("workspace.discardDraftDescription")}
-            confirmLabel={t("workspace.discardDraft")}
-            destructive
-            pending={discardDraftPending}
-            onConfirm={() => void discardRecoveryDraft()}
-          />
-
-          <ConfirmDialog
-            open={overwriteConfirmOpen}
-            onOpenChange={(open) => {
-              if (!open) setOverwriteConfirmOpen(false);
-            }}
-            title={t("workspace.overwriteConfirmTitle")}
-            description={t("workspace.overwriteConfirmDescription")}
-            confirmLabel={t("workspace.overwriteAndSave")}
-            cancelLabel={t("workspace.stay")}
-            destructive
-            onConfirm={() => {
-              setOverwriteConfirmOpen(false);
-              void persistPage({ closeEditor: true, force: true });
-            }}
-          />
-
-          {currentPage ? (
-            <MovePageDialog
-              space={space}
-              page={currentPage}
-              pages={pages}
-              open={movePageOpen}
-              onOpenChange={setMovePageOpen}
-            />
-          ) : null}
-
-          {currentPage && canManageRestrictions ? (
-            <PageRestrictionsDialog
-              spaceKey={space.key}
-              page={currentPage}
-              members={members}
-              open={pageAccessOpen}
-              onOpenChange={setPageAccessOpen}
-            />
-          ) : null}
-
-          {currentPage ? (
-            <PageSummaryDialog
-              // A different page starts from a clean slate.
-              key={`${space.key}/${currentPage.slug}`}
-              open={summaryOpen}
-              onOpenChange={setSummaryOpen}
-              spaceKey={space.key}
-              pageSlug={currentPage.slug}
-              pageTitle={currentPage.title}
-            />
-          ) : null}
-
-          {currentPage ? (
-            <SharePageDialog
-              spaceKey={space.key}
-              pageSlug={currentPage.slug}
-              pageTitle={currentPage.title}
-              open={shareDialogOpen}
-              onOpenChange={setShareDialogOpen}
-              onCopyLink={() => void shareCurrentPage()}
-              onShared={setShareCount}
-            />
-          ) : null}
-
-          {currentPage ? (
-            <PublicShareDialog
-              spaceKey={space.key}
-              pageSlug={currentPage.slug}
-              pageTitle={currentPage.title}
-              open={publicShareDialogOpen}
-              onOpenChange={setPublicShareDialogOpen}
-            />
-          ) : null}
-
-          {currentPage ? (
-            <PageHistoryModal
-              open={historyModalOpen}
-              onOpenChange={setHistoryModalOpen}
-              spaceKey={space.key}
-              slug={currentPage.slug}
-              pageTitle={currentPage.title}
-              onRestored={() => router.refresh()}
-            />
-          ) : null}
-
-          <EditSpaceModal
+          <WorkspaceDialogs
             space={space}
+            pages={pages}
+            members={members}
             groups={groups}
-            open={editSpaceModalOpen}
-            onOpenChange={setEditSpaceModalOpen}
-          />
-
-          <SpaceTrashDialog space={space} open={trashOpen} onOpenChange={setTrashOpen} />
-          <SpaceGraphDialog space={space} open={mapOpen} onOpenChange={setMapOpen} />
-          {canAdmin ? (
-            <SpaceHealthDialog space={space} open={healthOpen} onOpenChange={setHealthOpen} />
-          ) : null}
-          <RelatedPagesDialog
+            currentPage={currentPage}
+            canAdmin={canAdmin}
+            canManageRestrictions={canManageRestrictions}
+            canManageTemplates={canManageTemplates}
+            isSystemAdmin={isSystemAdmin}
             related={related}
-            spaceKey={space.key}
-            open={relatedOpen}
-            onOpenChange={setRelatedOpen}
-          />
-
-          {/* One controlled instance shared by both entry points: the sidebar
-              button and the More-actions item. Nesting a second Radix trigger
-              inside the dropdown would fight the menu for focus. */}
-          <ImportPagesDialog
-            spaceKey={space.key}
-            parentPage={null}
-            existingPages={pages}
-            open={importDialogOpen}
-            onOpenChange={setImportDialogOpen}
-            trigger={null}
-            onStarted={() => undefined}
-            onFinished={() => router.refresh()}
-          />
-
-          {currentPage ? (
-            <PageAttachmentsDialog
-              pageTitle={currentPage.title}
-              content={currentPage.content}
-              open={attachmentsDialogOpen}
-              onOpenChange={setAttachmentsDialogOpen}
-            />
-          ) : null}
-          {currentPage ? <PageLabelsDialog spaceKey={space.key} slug={currentPage.slug} open={labelsDialogOpen} onOpenChange={setLabelsDialogOpen} onChange={setPageLabels} /> : null}
-
-          <ConfirmDialog
-            open={deletePageOpen}
-            onOpenChange={setDeletePageOpen}
-            title={t("workspace.deletePageTitle")}
-            description={t("workspace.deletePageDescription", {
-              title:
-                currentPage?.title ?? t("workspace.deletePageFallback"),
-              days: trashDays,
-            })}
-            confirmLabel={t("workspace.deletePageConfirm")}
-            destructive
-            pending={deletePagePending}
-            onConfirm={() => void deletePage()}
+            leaveHref={editor.leaveHref}
+            reloadPending={editor.reloadPending}
+            cancelEditPending={editor.cancelEditPending}
+            pageEditDirty={editor.pageEditDirty}
+            savePending={editor.savePending}
+            draftNowPending={editor.draftNowPending}
+            onDismissLeaveDialog={editor.dismissLeaveDialog}
+            onLeaveWithoutSaving={editor.leaveWithoutSaving}
+            onSaveDraftAndCancel={editor.saveDraftAndCancel}
+            onSaveBeforeLeave={editor.saveBeforeLeave}
+            conversionMode={editor.conversionMode}
+            onDismissConversion={() => editor.setConversionMode(null)}
+            onConfirmConversion={(mode) => {
+              editor.setConversionMode(null);
+              editor.openEditor(mode);
+            }}
+            discardDraftOpen={editor.discardDraftOpen}
+            setDiscardDraftOpen={editor.setDiscardDraftOpen}
+            discardDraftPending={editor.discardDraftPending}
+            onDiscardRecoveryDraft={editor.discardRecoveryDraft}
+            overwriteConfirmOpen={editor.overwriteConfirmOpen}
+            setOverwriteConfirmOpen={editor.setOverwriteConfirmOpen}
+            onConfirmOverwrite={() => {
+              editor.setOverwriteConfirmOpen(false);
+              void editor.persistPage({ closeEditor: true, force: true });
+            }}
+            movePageOpen={movePageOpen}
+            setMovePageOpen={setMovePageOpen}
+            pageAccessOpen={pageAccessOpen}
+            setPageAccessOpen={setPageAccessOpen}
+            summaryOpen={summaryOpen}
+            setSummaryOpen={setSummaryOpen}
+            shareDialogOpen={shareDialogOpen}
+            setShareDialogOpen={setShareDialogOpen}
+            onCopyLink={shareCurrentPage}
+            onShared={setShareCount}
+            publicShareDialogOpen={publicShareDialogOpen}
+            setPublicShareDialogOpen={setPublicShareDialogOpen}
+            historyModalOpen={historyModalOpen}
+            setHistoryModalOpen={setHistoryModalOpen}
+            onRefresh={() => router.refresh()}
+            editSpaceModalOpen={editSpaceModalOpen}
+            setEditSpaceModalOpen={setEditSpaceModalOpen}
+            trashOpen={trashOpen}
+            setTrashOpen={setTrashOpen}
+            mapOpen={mapOpen}
+            setMapOpen={setMapOpen}
+            healthOpen={healthOpen}
+            setHealthOpen={setHealthOpen}
+            templatesOpen={templatesOpen}
+            setTemplatesOpen={setTemplatesOpen}
+            saveAsTemplateOpen={saveAsTemplateOpen}
+            setSaveAsTemplateOpen={setSaveAsTemplateOpen}
+            relatedOpen={relatedOpen}
+            setRelatedOpen={setRelatedOpen}
+            importDialogOpen={importDialogOpen}
+            setImportDialogOpen={setImportDialogOpen}
+            attachmentsDialogOpen={attachmentsDialogOpen}
+            setAttachmentsDialogOpen={setAttachmentsDialogOpen}
+            labelsDialogOpen={labelsDialogOpen}
+            setLabelsDialogOpen={setLabelsDialogOpen}
+            onPageLabelsChange={setPageLabels}
+            deletePageOpen={deletePageOpen}
+            setDeletePageOpen={setDeletePageOpen}
+            trashDays={trashDays}
+            deletePagePending={deletePagePending}
+            onDeletePage={deletePage}
           />
 
           {audience ? (
@@ -3689,13 +978,13 @@ export function SpaceWorkspace({
                 {audience.everyone
                   ? t(currentPage ? "workspace.audiencePageEveryone" : "workspace.audienceSpaceEveryone")
                   : t(currentPage ? "workspace.audiencePage" : "workspace.audienceSpace", {
-                  users: t(audience.users === 1 ? "workspace.audienceUsersOne" : "workspace.audienceUsersMany", {
-                    count: audience.users,
-                  }),
-                  groups: t(audience.groups === 1 ? "workspace.audienceGroupsOne" : "workspace.audienceGroupsMany", {
-                    count: audience.groups,
-                  }),
-                })}
+                      users: t(audience.users === 1 ? "workspace.audienceUsersOne" : "workspace.audienceUsersMany", {
+                        count: audience.users,
+                      }),
+                      groups: t(audience.groups === 1 ? "workspace.audienceGroupsOne" : "workspace.audienceGroupsMany", {
+                        count: audience.groups,
+                      }),
+                    })}
               </p>
             </div>
           ) : null}

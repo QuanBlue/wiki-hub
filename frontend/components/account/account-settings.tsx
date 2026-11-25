@@ -8,6 +8,7 @@ import { ProfileForm } from "@/components/account/profile-form";
 import { ProfileSummary } from "@/components/account/profile-summary";
 import { SessionsPanel } from "@/components/account/sessions-panel";
 import { ShortcutSettings } from "@/components/account/shortcut-settings";
+import { TwoFactorPanel } from "@/components/account/two-factor-panel";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n/context";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -203,6 +204,8 @@ export function AccountSettings({
                     {t("account.changePassword")}
                   </Button>
                 </div>
+
+                <TwoFactorPanel />
 
                 <div className="border-border flex flex-col gap-4 border-t p-5 sm:flex-row sm:items-center">
                   <span className="bg-surface-sunken text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md">

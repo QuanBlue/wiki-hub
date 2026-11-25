@@ -323,6 +323,22 @@ describe("ProfileForm", () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  it("resets unsaved edits when Reset is clicked", async () => {
+    const actor = userEvent.setup();
+    renderForm();
+    const reset = screen.getByRole("button", { name: "Reset" });
+    expect(reset).toBeDisabled();
+
+    const name = screen.getByLabelText("Display name");
+    await actor.clear(name);
+    await actor.type(name, "Changed Name");
+    expect(reset).toBeEnabled();
+
+    await actor.click(reset);
+    expect(name).toHaveValue("Ann Lee");
+    expect(reset).toBeDisabled();
+  });
+
   it("falls back to initials, then an icon, when there is no picture", () => {
     renderForm(me({ full_name: "", username: "bob" }));
     expect(screen.getByText("B")).toBeInTheDocument();

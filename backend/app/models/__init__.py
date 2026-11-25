@@ -26,6 +26,7 @@ from app.models.notification import Notification
 from app.models.page import PageLike, PageWatch, UserPagePin, WikiPage
 from app.models.page_graph import PageGraphState, PageLink
 from app.models.page_review import PageReview
+from app.models.page_template import PageTemplate
 from app.models.permission import (
     GlobalPermission,
     Group,
@@ -106,6 +107,7 @@ __all__ = [
     "PageReview",
     "PageRevision",
     "PageShare",
+    "PageTemplate",
     "PageUserRestriction",
     "PageWatch",
     "Permission",

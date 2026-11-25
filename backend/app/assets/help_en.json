@@ -383,6 +383,23 @@
   "text": "<>\nPublishing a page (clicking Save) and merely having unsaved\nchanges are two different things in WikiHub - a dedicated draft system sits\nbetween them so a closed tab or a crashed browser never costs you real work.\nAuto-save toggle: while editing, switch on\nAuto-save (in the editor toolbar) to save your in-progress edit\nto the server every 30 seconds - separately from actually publishing the\npage. A local copy is also kept in your browser as a fallback.\nRecovering a draft: if you navigate away (or your browser\ncloses) with an unpublished draft still pending, coming back to that page\nshows a Draft not released banner - “This draft was last\nsaved on {\"\"} and has not been saved to the page.” Click\nOpen editor to resume exactly where you left off, or\nDiscard draft to throw it away.\nConflict warning: if someone else published changes to the\npage after your draft was created, the banner adds\n“The page has changed since this draft was created.” so\nyou know to check for overlap before resuming.\nDiscard draft asks “Discard unreleased draft?”\nbefore doing anything - it only ever removes the saved draft and restores the\npage to its current, already-published content.\n),\n},"
  },
  {
+  "id": "page-templates",
+  "title": "Page Templates",
+  "category": "Writing",
+  "keywords": [
+   "template",
+   "page templates",
+   "meeting notes",
+   "runbook",
+   "adr",
+   "post-mortem",
+   "onboarding",
+   "rfc",
+   "save as template"
+  ],
+  "text": "<>\nWhen creating a page, pick Blank page or start from a\nready-made template. Every space includes 18 built-in templates (Meeting\nNotes, Operations Runbook, ADR, Incident Post-mortem, Team Onboarding\nGuide, Technical Proposal / RFC, PRD, Sprint Retrospective, Project Plan,\nRelease Notes, API Specification, System Architecture, Deployment\nChecklist, Security Review, Weekly Status Update, 1:1 Notes, SOP, and\nTroubleshooting & FAQ) alongside any global or space templates your\nteam has created.\nUse a template: open Create page, filter\nby Space, Global, or Built-in, preview the structure, and create the page.\nSave an existing page as a template: open a page's\nMore menu and choose Save as template\n(available to Space Owners, Space Admins, and System Administrators).\nManage templates: Space Owners and Admins manage space\ntemplates from Templates at the bottom of the space\nsidebar; System Administrators manage global templates under\nAdministration → Templates. Templates are included in\nfull backups and restores.\n),\n},"
+ },
+ {
   "id": "format-conversion",
   "title": "Switching Between Rich Text, Markdown & HTML",
   "category": "Writing",
@@ -514,6 +531,22 @@
    "logout"
   ],
   "text": "<>\nManage your personal account preferences under Account\nfrom the profile menu.\nA member's profile opens with a contribution chart: one square per day\nover the last year, darker on days with more page edits. Hover a square for its date and\ncount, and pick another year on the right to look further back.\nIn the activity feed, a page you edited several times in a row appears as one row,\nUpdated 6 times. Click it to see every edit with its own\nview change link.\nPersonal status:\nOpen the account menu and choose Set status (Update status\nonce one is set) to share a short note with everyone in the workspace: pick an icon,\ntype up to 140 characters or start from a preset (Free to chat, Slow to\nrespond, Travelling...), and choose Clear status after 1\nhour, 4 hours, 24 hours, 7 days or never. The status shows as a thought bubble on your\nprofile and next to your avatar, with the time it lasts in its tooltip. It disappears\nby itself when it expires, or press Clear status.\nGuest welcome effect:\nOn your own Home, click the palette button over the cover, or use the\nWelcome effect row in Your account → Edit profile, to pick a\nwelcome effect that plays for visitors for about 5 seconds. There are 26 themes in four\ngroups: Classic, Games (Block Craft, Platformer,\nRacing), Adventure (Pirate, Ninja, Rocket, Jungle) and\nStyles (Cyberpunk, Steampunk, Candy, Kawaii). Holiday scenes are not in\nthis list: they come from the seasonal theme (see below).\nEvery theme follows the same script: the scene opens, Hubby (the\nWikiHub owl mascot, dressed for the theme) arrives beside your avatar and presents it, a\nhalo and sparkles light the avatar up, then Hubby waves and everything fades. The\neffects never cover your avatar.\nPress the round play button on a card to preview it in a mock Home,\nthen Use this theme to choose and save it in one step. You can also click a card and press Save effect.\nThe optional Custom greeting (up to 140 characters) appears as\nthe speech bubble of Hubby. Leave it empty for no bubble. Visitors can press\nSkip at any time, and the effect is replaced by a still greeting if\ntheir system asks to reduce motion.\nFestival effects on Home: while a seasonal theme is running (Tết,\nValentine, Teachers' Day, Children's Day, National Day, Halloween, Christmas and\nthe other holidays), your Home plays that holiday's own scene with a festive\ngreeting every time you come back to Home, with Hubby dressed for the occasion (an áo\ndài for Tết, for example). Press Skip to stop it for the rest of the\nsession; the play button on the cover still replays it. It takes\npriority over your own welcome effect on Home, which plays once per session. On someone\nelse's profile you still see that person's own effect. Holiday scenes are not\nselectable themes.\nAdministrators can set the effect for other members from their profile.\n1. User Profile Settings:\nClick Edit profile to update display name, email, avatar\nimage, bio, pronouns, company, and social links.\nClick your profile picture or cover image to choose\nUpload new picture or Reposition. Reposition\nreopens the picture you uploaded, so you can drag or zoom it again without\nuploading it a second time. Pictures saved before this existed, or restored from a\nbackup, reposition from the cropped image instead.\nField validation provides instant feedback on format or requirement errors.\nIf you have changes you have not saved and try to leave (Cancel,\nanother settings tab, or a link to another page), WikiHub asks what to do:\nSave and leave, Leave without saving, or\nKeep editing. If saving fails, you stay on the form so you can fix it.\n2. Password Security & Rules:\nUpdate your password in Password & authentication.\nPassword strength meters check length, numbers, symbols, and uppercase\ncharacter rules. Click Generate password to create a strong\nrandom password.\n3. Active Sessions Management:\nIn Sessions, view active browsers and sign out all other\nsessions if you see activity you do not recognise. You can revoke specific\ndevices or click Revoke all sessions to invalidate\nall remote tokens immediately.\n),\n},"
+ },
+ {
+  "id": "two-factor-auth",
+  "title": "Two-Factor Authentication (2FA)",
+  "category": "Account",
+  "keywords": [
+   "2fa",
+   "two-factor",
+   "totp",
+   "authenticator",
+   "qr",
+   "recovery codes",
+   "security",
+   "reset 2fa"
+  ],
+  "text": "<>\nAdd a second sign-in step using any standard TOTP authenticator app (Google\nAuthenticator, Authy, 1Password, Bitwarden). QR codes are generated locally\nin your browser so your secret never leaves WikiHub.\nEnable 2FA: open Your account → Security,\nclick Enable 2FA, scan the QR code (or copy the manual\nkey), and enter the 6-digit code (it verifies automatically as soon as all\n6 boxes are filled).\nRecovery codes: WikiHub issues 10 one-time recovery codes\nshown once — download the .txt file to continue and keep it\nsomewhere safe in case you lose your phone. You can regenerate a fresh set\nor switch devices with New QR code anytime from\nAccount → Security (your current authenticator stays\nactive until you confirm the new one).\nAdministrator policy & resets: System Administrators\ncan require 2FA for administrators or for everyone under\nAdministration → Settings (the protected bootstrap\nadministrator is always exempt so the instance cannot be locked out), and\ncan reset a user's 2FA under Administration → Users\n(every reset is recorded in the audit log).\n),\n},"
  },
  {
   "id": "notifications",

@@ -2044,6 +2044,56 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "page-templates",
+    title: "Page Templates",
+    category: "Writing",
+    description:
+      "Start new pages from built-in, global, or space templates, or save any existing page as a reusable template.",
+    keywords: [
+      "template",
+      "page templates",
+      "meeting notes",
+      "runbook",
+      "adr",
+      "post-mortem",
+      "onboarding",
+      "rfc",
+      "save as template",
+    ],
+    body: (
+      <>
+        <p className="text-sm">
+          When creating a page, pick <strong>Blank page</strong> or start from a
+          ready-made template. Every space includes 18 built-in templates (Meeting
+          Notes, Operations Runbook, ADR, Incident Post-mortem, Team Onboarding
+          Guide, Technical Proposal / RFC, PRD, Sprint Retrospective, Project Plan,
+          Release Notes, API Specification, System Architecture, Deployment
+          Checklist, Security Review, Weekly Status Update, 1:1 Notes, SOP, and
+          Troubleshooting &amp; FAQ) alongside any global or space templates your
+          team has created.
+        </p>
+        <ul className="mt-3 list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>Use a template</strong>: open <strong>Create page</strong>, filter
+            by Space, Global, or Built-in, preview the structure, and create the page.
+          </li>
+          <li>
+            <strong>Save an existing page as a template</strong>: open a page&apos;s
+            <strong>More</strong> menu and choose <strong>Save as template</strong>{" "}
+            (available to Space Owners, Space Admins, and System Administrators).
+          </li>
+          <li>
+            <strong>Manage templates</strong>: Space Owners and Admins manage space
+            templates from <strong>Templates</strong> at the bottom of the space
+            sidebar; System Administrators manage global templates under{" "}
+            <strong>Administration → Templates</strong>. Templates are included in
+            full backups and restores.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "format-conversion",
     title: "Switching Between Rich Text, Markdown & HTML",
     category: "Writing",
@@ -2682,6 +2732,56 @@ export const sectionsEn: HelpSection[] = [
           devices or click <strong>Revoke all sessions</strong> to invalidate
           all remote tokens immediately.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "two-factor-auth",
+    title: "Two-Factor Authentication (2FA)",
+    category: "Account",
+    description:
+      "Protect your account with an authenticator app (TOTP), one-time recovery codes, and workspace enforcement policies.",
+    keywords: [
+      "2fa",
+      "two-factor",
+      "totp",
+      "authenticator",
+      "qr",
+      "recovery codes",
+      "security",
+      "reset 2fa",
+    ],
+    body: (
+      <>
+        <p className="text-sm">
+          Add a second sign-in step using any standard TOTP authenticator app (Google
+          Authenticator, Authy, 1Password, Bitwarden). QR codes are generated locally
+          in your browser so your secret never leaves WikiHub.
+        </p>
+        <ul className="mt-3 list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>Enable 2FA</strong>: open <strong>Your account → Security</strong>,
+            click <strong>Enable 2FA</strong>, scan the QR code (or copy the manual
+            key), and enter the 6-digit code (it verifies automatically as soon as all
+            6 boxes are filled).
+          </li>
+          <li>
+            <strong>Recovery codes</strong>: WikiHub issues 10 one-time recovery codes
+            shown once — download the <code>.txt</code> file to continue and keep it
+            somewhere safe in case you lose your phone. You can regenerate a fresh set
+            or switch devices with <strong>New QR code</strong> anytime from{" "}
+            <strong>Account → Security</strong> (your current authenticator stays
+            active until you confirm the new one).
+          </li>
+          <li>
+            <strong>Administrator policy &amp; resets</strong>: System Administrators
+            can require 2FA for administrators or for everyone under{" "}
+            <strong>Administration → Settings</strong> (the protected bootstrap
+            administrator is always exempt so the instance cannot be locked out), and
+            can reset a user&apos;s 2FA under <strong>Administration → Users</strong>{" "}
+            (every reset is recorded in the audit log).
+          </li>
+        </ul>
       </>
     ),
   },

@@ -84,6 +84,14 @@ describe("LoginShowcase", () => {
     expect(screen.getByText(t("auth.featAskTitle"))).toBeInTheDocument();
     expect(screen.queryByText(t("auth.featControlTitle"))).not.toBeInTheDocument();
     expect(screen.getByRole("img")).toHaveAttribute("src", "/img.png");
+    expect(screen.getByRole("img")).toHaveClass("bg-surface");
+  });
+
+  it("tints the default illustration header with the brand theme color token", () => {
+    render(<LoginShowcase preview siteName="Acme" panel={resolveLoginPanel(emptyLoginPanel(), null, "en", t)} />);
+    const img = screen.getByRole("img");
+    expect(img).toHaveAttribute("src", DEFAULT_LOGIN_IMAGE);
+    expect(img).toHaveClass("bg-[var(--wh-brand-600)]");
   });
 
   it("omits the illustration when it is hidden", () => {
@@ -98,10 +106,12 @@ describe("LoginPanelSettings", () => {
   function Harness({
     initial = emptyLoginPanel(),
     imageUrl = null,
+    themeColor,
     onImageUrl = vi.fn(),
   }: {
     initial?: LoginPanel;
     imageUrl?: string | null;
+    themeColor?: string;
     onImageUrl?: (url: string | null) => void;
   }) {
     const [value, setValue] = useState(initial);
@@ -119,6 +129,7 @@ describe("LoginPanelSettings", () => {
             }}
             hasUploadedImage={url !== null}
             siteName="Acme"
+            themeColor={themeColor}
             pending={false}
             dirty
           />
@@ -246,5 +257,12 @@ describe("LoginPanelSettings", () => {
 
     await actor.click(screen.getByRole("button", { name: "Use the default image" }));
     await waitFor(() => expect(m.toastError).toHaveBeenCalledWith("Could not remove the image."));
+  });
+
+  it("applies the selected brand theme color to the live preview", () => {
+    render(<Harness themeColor="emerald" />);
+    const frame = preview();
+    expect(frame.style.getPropertyValue("--wh-brand-600")).toBe("#16a34a");
+    expect(frame.style.getPropertyValue("--primary")).toBe("#16a34a");
   });
 });

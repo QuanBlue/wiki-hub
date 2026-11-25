@@ -928,6 +928,22 @@ async def reset_user_password(
     return await _read_user(session, updated)
 
 
+@router.post(
+    "/{user_id}/reset-2fa",
+    response_model=UserRead,
+    summary="Reset a user's two-factor authentication (administrator)",
+)
+async def reset_user_2fa(
+    user_id: uuid.UUID,
+    user: CurrentUser,
+    session: DbSession,
+    service: ActingAuthServiceDep,
+) -> UserRead:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    updated = await service.reset_2fa(user_id)
+    return await _read_user(session, updated)
+
+
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,

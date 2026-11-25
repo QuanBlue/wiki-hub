@@ -8,6 +8,7 @@ import {
   SeasonalLoginAtmosphere,
   SeasonalLoginCardEdge,
   SeasonalLoginGreeting,
+  SeasonalLoginWatermark,
   SeasonalShowcaseFoot,
 } from "@/components/seasonal/seasonal-login-decor";
 import { SeasonalPreviewMock } from "@/components/seasonal/seasonal-preview-mock";
@@ -25,6 +26,7 @@ function LoginDecor({ preset }: { preset: SeasonalEffectPresetId }) {
       <SeasonalLoginCardEdge preset={preset} />
       <SeasonalShowcaseFoot preset={preset} />
       <SeasonalLoginGreeting preset={preset} />
+      <SeasonalLoginWatermark preset={preset} />
     </>
   );
 }
@@ -89,6 +91,7 @@ describe("SeasonalPreviewMock", () => {
     expect(frame.querySelector('[data-testid="seasonal-login-edge"]')).not.toBeNull();
     expect(frame.querySelector('[data-testid="seasonal-login-foot"]')).not.toBeNull();
     expect(frame.querySelector('[data-testid="seasonal-login-greeting"]')).not.toBeNull();
+    expect(frame.querySelector('[data-testid="seasonal-login-watermark"] pattern')).not.toBeNull();
     expect(frame.querySelector("[data-wh-rail]")).toBeNull();
   });
 
@@ -110,14 +113,20 @@ describe("sign-in page decoration", () => {
     expect(screen.getByTestId("seasonal-login-edge")).toBeInTheDocument();
     expect(screen.getByTestId("seasonal-login-foot")).toBeInTheDocument();
     expect(screen.getByTestId("seasonal-login-greeting").textContent).not.toBe("");
+    expect(
+      screen.getByTestId("seasonal-login-watermark").querySelector("pattern"),
+    ).not.toBeNull();
     expect(container.querySelectorAll(".wh-seasonal-fall").length).toBeGreaterThan(0);
   });
 
   it("keeps the solemn memorial pack still: no particles", () => {
     const { container } = withLocale(<LoginDecor preset="memorial_candle" />);
     expect(screen.getByTestId("seasonal-login-edge")).toBeInTheDocument();
+    expect(screen.getByTestId("seasonal-login-watermark")).toBeInTheDocument();
     expect(
-      container.querySelectorAll(".wh-seasonal-fall, .wh-seasonal-rise, .wh-seasonal-float"),
+      container.querySelectorAll(
+        ".wh-seasonal-fall, .wh-seasonal-rise, .wh-seasonal-float, .wh-seasonal-tile-drift, .wh-seasonal-tile-drift-y",
+      ),
     ).toHaveLength(0);
   });
 });

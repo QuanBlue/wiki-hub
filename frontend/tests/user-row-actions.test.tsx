@@ -119,6 +119,37 @@ describe("UserRowActions", () => {
     expect(screen.getByRole("button", { name: "Edit ann" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Delete ann" })).toBeEnabled();
   });
+
+  it("shows Reset 2FA only when totp_enabled is true and resets after confirmation", async () => {
+    const actor = userEvent.setup();
+    const first = renderActions(makeUser({ totp_enabled: false }));
+    expect(screen.queryByRole("button", { name: "Reset 2FA for ann" })).not.toBeInTheDocument();
+    first.unmount();
+
+    mocked.post.mockResolvedValueOnce(makeUser({ totp_enabled: false }));
+    renderActions(makeUser({ totp_enabled: true }));
+
+    await actor.click(screen.getByRole("button", { name: "Reset 2FA for ann" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await actor.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(mocked.post).toHaveBeenCalledWith("/api/v1/users/u1/reset-2fa");
+    expect(toastSuccess).toHaveBeenCalledWith("Two-factor authentication reset for ann.");
+  });
+
+  it("reports Reset 2FA failures", async () => {
+    const actor = userEvent.setup();
+    mocked.post.mockRejectedValueOnce(new ApiError(403, "forbidden", "Cannot reset 2FA."));
+    renderActions(makeUser({ totp_enabled: true }));
+
+    await actor.click(screen.getByRole("button", { name: "Reset 2FA for ann" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await actor.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Cannot reset 2FA."));
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
 
 describe("PermissionOverridesTable", () => {

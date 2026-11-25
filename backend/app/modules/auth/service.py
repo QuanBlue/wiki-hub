@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
     AuthenticationError,
+    BadRequestError,
     ConflictError,
     NotFoundError,
     PermissionDeniedError,
@@ -22,6 +23,17 @@ from app.core.logging import get_logger
 from app.core.security import hash_password, needs_rehash, verify_password
 from app.models.audit import AuditAction
 from app.models.user import User
+from app.modules.admin_mail.crypto import CredentialUnreadableError
+from app.modules.auth.totp import (
+    build_otpauth_uri,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
+    hash_recovery_codes,
+    verify_and_consume_recovery_code,
+    verify_totp_code,
+)
 from app.modules.notifications.service import IMPERSONATION_NOTICE_KIND, notify
 from app.repositories.user import UserRepository
 from app.schemas.user import SelfProfileUpdate, UserCreate, UserUpdate
@@ -686,6 +698,243 @@ class AuthService:
             entity_label=user.username,
             # The password itself is never recorded, here or anywhere.
             details=details,
+        )
+        return user
+
+    # -- two-factor authentication (TOTP) ----------------------------------
+    async def begin_2fa_setup(self, user: User, *, issuer: str) -> tuple[str, str]:
+        """Generate and persist an encrypted pending TOTP secret for ``user``."""
+        if user.totp_enabled:
+            raise ConflictError(
+                "Two-factor authentication is already enabled.",
+                code="2fa_already_enabled",
+            )
+        secret = generate_totp_secret()
+        user.totp_pending_secret_encrypted = encrypt_totp_secret(secret)
+        await self.session.flush()
+        account_label = user.email or user.username
+        return secret, build_otpauth_uri(secret, account_label, issuer)
+
+    async def begin_2fa_reconfigure(
+        self, user: User, *, password: str, code: str, issuer: str
+    ) -> tuple[str, str]:
+        """Verify current password + TOTP/recovery code and stage a new pending TOTP secret.
+
+        The existing TOTP secret stays active until :meth:`confirm_2fa_setup`
+        succeeds so cancelling mid-way never leaves the account unprotected or
+        locked out.
+        """
+        if not user.totp_enabled or not user.totp_secret_encrypted:
+            raise ConflictError(
+                "Two-factor authentication is not enabled.",
+                code="2fa_not_enabled",
+            )
+        if not verify_password(password, user.password_hash):
+            raise AuthenticationError("Your current password is incorrect.")
+
+        try:
+            current_secret: str | None = decrypt_totp_secret(user.totp_secret_encrypted)
+        except CredentialUnreadableError:
+            current_secret = None
+
+        code_valid = current_secret is not None and verify_totp_code(current_secret, code)
+        if not code_valid:
+            matched, remaining = verify_and_consume_recovery_code(
+                code, list(user.totp_recovery_codes or [])
+            )
+            if matched:
+                user.totp_recovery_codes = remaining
+                code_valid = True
+        if not code_valid:
+            raise AuthenticationError("Invalid verification code.", code="2fa_invalid_code")
+
+        secret = generate_totp_secret()
+        user.totp_pending_secret_encrypted = encrypt_totp_secret(secret)
+        await self.session.flush()
+        account_label = user.email or user.username
+        return secret, build_otpauth_uri(secret, account_label, issuer)
+
+    async def confirm_2fa_setup(self, user: User, code: str) -> list[str]:
+        """Verify ``code`` against the pending secret, enable/rotate 2FA, and return codes."""
+        reconfiguring = bool(user.totp_enabled and user.totp_pending_secret_encrypted)
+        if user.totp_enabled and not reconfiguring:
+            raise ConflictError(
+                "Two-factor authentication is already enabled.",
+                code="2fa_already_enabled",
+            )
+        if not user.totp_pending_secret_encrypted:
+            raise BadRequestError(
+                "No pending two-factor setup found. Start setup again.",
+                code="2fa_setup_not_started",
+            )
+        try:
+            secret = decrypt_totp_secret(user.totp_pending_secret_encrypted)
+        except CredentialUnreadableError as exc:
+            raise BadRequestError(
+                "Pending two-factor setup could not be read. Start setup again.",
+                code="2fa_setup_unreadable",
+            ) from exc
+
+        if not verify_totp_code(secret, code):
+            raise AuthenticationError("Invalid verification code.", code="2fa_invalid_code")
+
+        recovery_codes = generate_recovery_codes()
+        user.totp_secret_encrypted = user.totp_pending_secret_encrypted
+        user.totp_pending_secret_encrypted = None
+        user.totp_enabled = True
+        user.totp_enabled_at = datetime.now(UTC)
+        user.totp_recovery_codes = hash_recovery_codes(recovery_codes)
+        await self.session.flush()
+        logger.info("two_factor_enabled", username=user.username, reconfigured=reconfiguring)
+        await self.audit.record(
+            AuditAction.two_factor_enabled,
+            entity_type="user",
+            entity_id=user.id,
+            entity_label=user.username,
+            details={"reconfigured": True} if reconfiguring else None,
+        )
+        return recovery_codes
+
+    async def verify_2fa_login(self, user: User, code: str) -> None:
+        """Verify a TOTP code or consume a one-time recovery code during login."""
+        if not user.totp_enabled or not user.totp_secret_encrypted:
+            raise AuthenticationError(
+                "Two-factor authentication is not enabled for this account.",
+                code="2fa_not_enabled",
+            )
+        try:
+            secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        except CredentialUnreadableError as exc:
+            raise AuthenticationError(
+                "Stored two-factor secret cannot be read. Contact an administrator to reset 2FA.",
+                code="2fa_secret_unreadable",
+            ) from exc
+
+        if verify_totp_code(secret, code):
+            return
+
+        matched, remaining = verify_and_consume_recovery_code(
+            code, list(user.totp_recovery_codes or [])
+        )
+        if matched:
+            user.totp_recovery_codes = remaining
+            await self.session.flush()
+            logger.info(
+                "two_factor_recovery_used",
+                username=user.username,
+                remaining_codes=len(remaining),
+            )
+            await self.audit.record(
+                AuditAction.two_factor_recovery_used,
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=user.username,
+                details={"remaining_codes": len(remaining)},
+            )
+            return
+
+        raise AuthenticationError("Invalid verification code.", code="2fa_invalid_code")
+
+    async def disable_2fa(
+        self,
+        user: User,
+        *,
+        password: str,
+        code: str,
+        enforced: bool,
+    ) -> User:
+        """Disable 2FA for ``user`` after verifying password and TOTP/recovery code."""
+        if enforced:
+            raise PermissionDeniedError(
+                "Two-factor authentication is required by workspace policy and cannot be disabled.",
+                code="2fa_enforced",
+            )
+        if not user.totp_enabled or not user.totp_secret_encrypted:
+            raise ConflictError(
+                "Two-factor authentication is not enabled.",
+                code="2fa_not_enabled",
+            )
+        if not verify_password(password, user.password_hash):
+            raise AuthenticationError("Your current password is incorrect.")
+
+        try:
+            secret: str | None = decrypt_totp_secret(user.totp_secret_encrypted)
+        except CredentialUnreadableError:
+            secret = None
+
+        code_valid = secret is not None and verify_totp_code(secret, code)
+        if not code_valid:
+            code_valid, _ = verify_and_consume_recovery_code(
+                code, list(user.totp_recovery_codes or [])
+            )
+        if not code_valid:
+            raise AuthenticationError("Invalid verification code.", code="2fa_invalid_code")
+
+        user.totp_secret_encrypted = None
+        user.totp_pending_secret_encrypted = None
+        user.totp_enabled = False
+        user.totp_enabled_at = None
+        user.totp_recovery_codes = []
+        await self.session.flush()
+        logger.info("two_factor_disabled", username=user.username)
+        await self.audit.record(
+            AuditAction.two_factor_disabled,
+            entity_type="user",
+            entity_id=user.id,
+            entity_label=user.username,
+        )
+        return user
+
+    async def regenerate_recovery_codes(
+        self, user: User, *, password: str, code: str
+    ) -> list[str]:
+        """Replace ``user``'s 10 recovery codes after verifying password + current TOTP code."""
+        if not user.totp_enabled or not user.totp_secret_encrypted:
+            raise ConflictError(
+                "Two-factor authentication is not enabled.",
+                code="2fa_not_enabled",
+            )
+        if not verify_password(password, user.password_hash):
+            raise AuthenticationError("Your current password is incorrect.")
+
+        try:
+            secret = decrypt_totp_secret(user.totp_secret_encrypted)
+        except CredentialUnreadableError as exc:
+            raise AuthenticationError(
+                "Stored two-factor secret cannot be read. Contact an administrator to reset 2FA.",
+                code="2fa_secret_unreadable",
+            ) from exc
+
+        if not verify_totp_code(secret, code):
+            raise AuthenticationError("Invalid verification code.", code="2fa_invalid_code")
+
+        recovery_codes = generate_recovery_codes()
+        user.totp_recovery_codes = hash_recovery_codes(recovery_codes)
+        await self.session.flush()
+        logger.info("two_factor_recovery_regenerated", username=user.username)
+        return recovery_codes
+
+    async def reset_2fa(self, user_id: uuid.UUID) -> User:
+        """Clear a user's 2FA configuration (administrator recovery path)."""
+        user = await self.users.get(user_id)
+        if user is None:
+            raise NotFoundError("User not found.")
+
+        self.assert_mutable(user)
+        self.assert_peer_admin_editable(user)
+
+        user.totp_secret_encrypted = None
+        user.totp_pending_secret_encrypted = None
+        user.totp_enabled = False
+        user.totp_enabled_at = None
+        user.totp_recovery_codes = []
+        await self.session.flush()
+        logger.info("two_factor_reset", username=user.username)
+        await self.audit.record(
+            AuditAction.two_factor_reset,
+            entity_type="user",
+            entity_id=user.id,
+            entity_label=user.username,
         )
         return user
 

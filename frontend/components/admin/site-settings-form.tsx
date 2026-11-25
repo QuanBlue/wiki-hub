@@ -117,6 +117,7 @@ import type {
   AppRole,
   InstanceInfo,
   LoginPanel,
+  RequireTwoFactorMode,
   SeasonalThemeSettings,
   SidebarPermissions,
   SiteSettings,
@@ -427,6 +428,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const [publicSharesEnabled, setPublicSharesEnabled] = useState<boolean>(
     settings.overrides.public_shares_enabled ?? settings.effective.public_shares_enabled ?? true,
   );
+  const [require2faMode, setRequire2faMode] = useState<RequireTwoFactorMode>(
+    settings.overrides.require_2fa_mode ?? settings.effective.require_2fa_mode ?? "off",
+  );
   const [sidebarPermissions, setSidebarPermissions] =
     useState<SidebarPermissions>(() => ({
       home: ["admin", "member"],
@@ -676,6 +680,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         : null,
       trash_retention_days: trashDays.trim() ? Number(trashDays) : null,
       public_shares_enabled: publicSharesEnabled,
+      require_2fa_mode: require2faMode,
     });
   }
 
@@ -738,6 +743,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const initialTrashDays = settings.overrides.trash_retention_days?.toString() ?? "";
   const initialPublicShares =
     settings.overrides.public_shares_enabled ?? settings.effective.public_shares_enabled ?? true;
+  const initialRequire2faMode: RequireTwoFactorMode =
+    settings.overrides.require_2fa_mode ?? settings.effective.require_2fa_mode ?? "off";
   const effectiveTrashDays =
     settings.effective.trash_retention_days || DEFAULT_TRASH_RETENTION_DAYS;
   const trashDaysNum = trashDays.trim() ? Number(trashDays) : effectiveTrashDays;
@@ -749,7 +756,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     siteName.trim() !== initialSiteName.trim() ||
     sessionTtlHours.trim() !== initialSessionTtl.trim() ||
     trashDays.trim() !== initialTrashDays.trim() ||
-    publicSharesEnabled !== initialPublicShares;
+    publicSharesEnabled !== initialPublicShares ||
+    require2faMode !== initialRequire2faMode;
 
   const normalizeSidebar = (perms?: SidebarPermissions | null) => ({
     home: [...(perms?.home ?? ["admin", "member"])].sort(),
@@ -1185,6 +1193,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                       setSessionTtlHours("");
                       setTrashDays("");
                       setPublicSharesEnabled(settings.effective.public_shares_enabled ?? true);
+                      setRequire2faMode(settings.effective.require_2fa_mode ?? "off");
                     }}
                   >
                     <RotateCcw className="size-3.5" />
@@ -1648,6 +1657,101 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                           : t("adminSettings.publicSharesDisabledBadge")}
                       </span>
                     </label>
+                  </div>
+                </div>
+
+                {/* Section 5: Two-factor authentication policy */}
+                <div
+                  id="two-factor-policy-settings"
+                  className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="border-primary/20 bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-lg border shrink-0">
+                        <ShieldCheck className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-foreground text-sm sm:text-base font-semibold">
+                          {t("adminSettings.twoFactorPolicyTitle")}
+                        </h4>
+                        <p className="text-muted-foreground mt-0.5 text-xs max-w-xl">
+                          {t("adminSettings.twoFactorPolicyDescription")}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={require2faMode === "off" ? "neutral" : "info"}
+                      className="text-[11px] font-medium shadow-2xs"
+                    >
+                      {require2faMode === "all"
+                        ? t("adminSettings.twoFactorPolicyAllBadge")
+                        : require2faMode === "admins"
+                          ? t("adminSettings.twoFactorPolicyAdminsBadge")
+                          : t("adminSettings.twoFactorPolicyOffBadge")}
+                    </Badge>
+                  </div>
+
+                  <div
+                    role="radiogroup"
+                    aria-label={t("adminSettings.twoFactorPolicyTitle")}
+                    className="grid gap-2.5 sm:grid-cols-3"
+                  >
+                    {(
+                      [
+                        {
+                          value: "off",
+                          title: t("adminSettings.twoFactorPolicyOffTitle"),
+                          desc: t("adminSettings.twoFactorPolicyOffDesc"),
+                        },
+                        {
+                          value: "admins",
+                          title: t("adminSettings.twoFactorPolicyAdminsTitle"),
+                          desc: t("adminSettings.twoFactorPolicyAdminsDesc"),
+                        },
+                        {
+                          value: "all",
+                          title: t("adminSettings.twoFactorPolicyAllTitle"),
+                          desc: t("adminSettings.twoFactorPolicyAllDesc"),
+                        },
+                      ] as const
+                    ).map((option) => {
+                      const selected = require2faMode === option.value;
+                      return (
+                        <label
+                          key={option.value}
+                          className={cn(
+                            "border-border bg-surface flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 transition-colors duration-150",
+                            "hover:border-border-strong hover:bg-surface-hover",
+                            "has-focus-visible:ring-ring has-focus-visible:ring-2 has-focus-visible:ring-offset-2",
+                            selected && "border-primary bg-primary-subtle/40 hover:bg-primary-subtle/60",
+                            pending && "cursor-not-allowed opacity-60",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="require_2fa_mode"
+                            value={option.value}
+                            checked={selected}
+                            disabled={pending}
+                            onChange={() => setRequire2faMode(option.value)}
+                            className="accent-primary mt-0.5 size-4 shrink-0 cursor-pointer"
+                          />
+                          <div className="min-w-0 space-y-0.5">
+                            <span className="text-foreground block text-xs font-semibold">
+                              {option.title}
+                            </span>
+                            <span className="text-muted-foreground block text-[11px] leading-relaxed">
+                              {option.desc}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="border-border bg-surface flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-xs text-muted-foreground">
+                    <Info className="text-primary mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    <span>{t("adminSettings.twoFactorPolicyBootstrapNote")}</span>
                   </div>
                 </div>
               </div>
@@ -2336,6 +2440,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   onImageUrlChange={setLoginImageUrl}
                   hasUploadedImage={loginImageUrl !== null}
                   siteName={siteName.trim() || settings.effective.site_name}
+                  themeColor={effectiveDraftColor}
                   pending={pending}
                   dirty={loginPanelChanged}
                 />

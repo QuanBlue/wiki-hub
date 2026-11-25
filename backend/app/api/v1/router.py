@@ -33,6 +33,7 @@ from app.api.v1 import (
     site_settings,
     spaces,
     storage_admin,
+    templates,
     users,
 )
 
@@ -70,6 +71,9 @@ api_router.include_router(ai.router)
 api_router.include_router(admin_stats.router)
 api_router.include_router(admin_monitor.router)
 api_router.include_router(export_render.router)
+api_router.include_router(templates.router)
+api_router.include_router(templates.space_router)
+api_router.include_router(templates.page_router)
 
 # Registered in later phases:
 #   groups, roles, revisions,

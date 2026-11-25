@@ -2079,6 +2079,55 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "page-templates",
+    title: "Mẫu trang (Page Templates)",
+    category: "Writing",
+    description:
+      "Tạo trang mới từ mẫu dựng sẵn, mẫu toàn hệ thống hoặc mẫu riêng của Space, hoặc lưu trang hiện có làm mẫu dùng lại.",
+    keywords: [
+      "mẫu trang",
+      "template",
+      "page templates",
+      "biên bản họp",
+      "runbook",
+      "adr",
+      "post-mortem",
+      "onboarding",
+      "rfc",
+      "lưu làm mẫu",
+    ],
+    body: (
+      <>
+        <p className="text-sm">
+          Khi tạo trang mới, bạn có thể chọn <strong>Trang trống</strong> hoặc bắt đầu
+          từ một mẫu có sẵn. Mọi Space đều có sẵn 18 mẫu dựng sẵn (Biên bản cuộc họp,
+          Sổ tay vận hành / Runbook, ADR, Báo cáo sau sự cố / Post-mortem, Hướng dẫn
+          hội nhập / Onboarding, Đề xuất kỹ thuật / RFC, PRD, Họp cải tiến Sprint,
+          Kế hoạch dự án, Ghi chú phát hành, Đặc tả API, Kiến trúc hệ thống, Checklist
+          triển khai, Đánh giá bảo mật, Báo cáo tuần, Họp 1:1, Quy trình SOP, Xử lý
+          sự cố &amp; FAQ) cùng các mẫu toàn hệ thống và mẫu riêng của Space.
+        </p>
+        <ul className="mt-3 list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>Dùng mẫu khi tạo trang</strong>: mở <strong>Tạo trang</strong>, lọc
+            theo Space, Toàn hệ thống hoặc Dựng sẵn, xem trước nội dung rồi tạo trang.
+          </li>
+          <li>
+            <strong>Lưu trang hiện có làm mẫu</strong>: mở menu <strong>Thêm</strong>{" "}
+            của trang và chọn <strong>Lưu làm mẫu</strong> (dành cho Chủ Space, Quản
+            trị Space và Quản trị hệ thống).
+          </li>
+          <li>
+            <strong>Quản lý mẫu</strong>: Chủ/Quản trị Space quản lý mẫu của Space tại
+            mục <strong>Mẫu trang</strong> ở chân thanh bên; Quản trị hệ thống quản lý
+            mẫu toàn hệ thống tại <strong>Quản trị → Mẫu trang</strong>. Các mẫu trang
+            được bao gồm trong sao lưu và khôi phục.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "format-conversion",
     title: "Chuyển đổi giữa Rich Text, Markdown & HTML",
     category: "Writing",
@@ -2732,6 +2781,56 @@ export const sectionsVi: HelpSection[] = [
           thể thu hồi các thiết bị cụ thể hoặc nhấn <strong>Revoke all
           sessions</strong> để vô hiệu hoá ngay lập tức mọi token từ xa.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "two-factor-auth",
+    title: "Xác thực hai yếu tố (2FA)",
+    category: "Account",
+    description:
+      "Bảo vệ tài khoản bằng ứng dụng Authenticator (TOTP), mã dự phòng dùng một lần và chính sách bắt buộc 2FA của quản trị viên.",
+    keywords: [
+      "2fa",
+      "xác thực hai yếu tố",
+      "totp",
+      "authenticator",
+      "mã qr",
+      "mã dự phòng",
+      "bảo mật",
+      "đặt lại 2fa",
+    ],
+    body: (
+      <>
+        <p className="text-sm">
+          Thêm bước xác minh thứ hai bằng ứng dụng TOTP chuẩn (Google Authenticator,
+          Authy, 1Password, Bitwarden). Mã QR được tạo hoàn toàn offline trên trình
+          duyệt để khóa bí mật không bao giờ rời khỏi WikiHub.
+        </p>
+        <ul className="mt-3 list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>Bật 2FA</strong>: vào <strong>Tài khoản của bạn → Bảo mật</strong>,
+            bấm <strong>Bật 2FA</strong>, quét mã QR (hoặc sao chép khóa thủ công) và
+            nhập đủ 6 chữ số (hệ thống tự động xác minh ngay khi điền đủ 6 ô).
+          </li>
+          <li>
+            <strong>Mã dự phòng &amp; đổi thiết bị</strong>: WikiHub cấp 10 mã dự phòng
+            dùng một lần và chỉ hiển thị một lần duy nhất — bạn cần bấm tải tệp{" "}
+            <code>.txt</code> trước khi tiếp tục và lưu ở nơi an toàn phòng khi mất
+            điện thoại. Bạn có thể tạo lại bộ mã dự phòng hoặc bấm{" "}
+            <strong>Tạo mã QR mới</strong> để chuyển sang điện thoại mới bất cứ lúc
+            nào trong <strong>Tài khoản → Bảo mật</strong> (mã 2FA cũ vẫn hoạt động cho
+            tới khi bạn xác nhận mã mới).
+          </li>
+          <li>
+            <strong>Chính sách &amp; đặt lại bởi quản trị viên</strong>: Quản trị hệ
+            thống có thể bật bắt buộc 2FA cho nhóm Quản trị viên hoặc toàn bộ người
+            dùng tại <strong>Quản trị → Cài đặt</strong> (tài khoản quản trị khởi tạo
+            được bảo vệ luôn được miễn bắt buộc để tránh tự khóa hệ thống), và có thể
+            đặt lại 2FA của người dùng tại <strong>Quản trị → Người dùng</strong> (mọi
+            thao tác đặt lại đều ghi nhật ký kiểm toán).
+          </li>
+        </ul>
       </>
     ),
   },

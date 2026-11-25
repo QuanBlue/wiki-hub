@@ -39,6 +39,7 @@ import {
   SeasonalLoginAtmosphere,
   SeasonalLoginCardEdge,
   SeasonalLoginGreeting,
+  SeasonalLoginWatermark,
   SeasonalShowcaseFoot,
 } from "@/components/seasonal/seasonal-login-decor";
 import { SeasonalSidebarOverlay } from "@/components/seasonal/seasonal-sidebar-overlay";
@@ -496,7 +497,8 @@ function LoginMock({
         preview
         decor={<SeasonalShowcaseFoot preset={preset} />}
       />
-      <section className="bg-surface-sunken/60 relative flex items-center justify-center px-6">
+      <section className="bg-surface-sunken/60 relative flex items-center justify-center overflow-hidden px-6">
+        <SeasonalLoginWatermark preset={preset} />
         <div className="relative z-10 w-full max-w-[27rem]">
           <SeasonalLoginGreeting preset={preset} className="mb-3" />
           <div className="relative">

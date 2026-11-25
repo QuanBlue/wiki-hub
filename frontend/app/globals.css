@@ -930,6 +930,19 @@
     position: relative;
   }
 
+  /* Multi-cell table selection (ProseMirror CellSelection). While a
+     CellSelection is active, ProseMirror adds .ProseMirror-hideselection which
+     makes native ::selection transparent, so both edit and view modes rely on
+     .selectedCell to show the highlighted cells. Using a background-image tint
+     overlays header shading and inline per-cell background-color values cleanly
+     in both light and dark themes. */
+  .ProseMirror .selectedCell {
+    background-image: linear-gradient(
+      color-mix(in oklab, var(--selection) 75%, transparent),
+      color-mix(in oklab, var(--selection) 75%, transparent)
+    );
+  }
+
   /* Editing uses fixed table layout: a cell's content must wrap inside the
      current column width, never reflow the columns. Column widths only change
      through the explicit drag affordance handled by TableColumnResize. */

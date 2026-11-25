@@ -116,6 +116,14 @@ The editing and search captures were retaken on 3 November 2026; the phone captu
 - **Spaces & hierarchical pages** — per-team knowledge containers with nested page
   trees, drag-anywhere moves, and per-user/per-group permissions down to a single
   page.
+- **Page templates** — create new pages from 18 built-in EN/VI templates (*Meeting
+  Notes*, *Runbook*, *ADR*, *Post-mortem*, *Onboarding*, *RFC*, *PRD*, *Sprint
+  Retrospective*, *Project Plan*, *Release Notes*, *API Spec*, *System
+  Architecture*, *Deployment Checklist*, *Security Review*, *Weekly Status*,
+  *1:1 Notes*, *SOP*, *Troubleshooting & FAQ*), Global templates managed under
+  **Administration → Templates**, or per-space templates managed by Space
+  Owners/Admins. Save any existing page as a reusable template in one click;
+  templates travel with backups.
 - **Rich-text editor** — Tiptap-based WYSIWYG with a sticky toolbar, `/` slash
   commands, tables, code blocks, callouts, toggles, and a raw Markdown/HTML source
   mode you can switch into at any time.
@@ -651,6 +659,11 @@ make the two packages public under the repository's *Packages* settings.
 - Secrets come from environment variables only; nothing sensitive is committed.
 - Passwords hashed with Argon2id; short-lived JWT access tokens plus rotating
   refresh tokens.
+- Optional **two-factor authentication (TOTP)** with offline QR code setup,
+  6-box auto-verifying OTP input, 10 one-time recovery codes (mandatory `.txt`
+  download), zero-lockout **New QR code** rotation, administrator enforcement
+  policy (*Off* / *Admins only* / *Everyone*, with the protected bootstrap
+  administrator always exempt), and audited administrator 2FA resets.
 - Uploads validated by extension, MIME type **and** magic bytes, with a size cap
   and generated object keys — the original filename is never trusted.
 - Structured logs pass through a redaction filter, so passwords, tokens, keys
@@ -693,15 +706,14 @@ What's genuinely still open:
 
 | Item | Status |
 |---|---|
-| In-app audit log viewer | Not built — admin actions are already logged server-side, there is just no UI to browse that log yet |
+| In-app audit log viewer | **Done** — browseable under **Administration → Audit logs** |
+| E-mail notifications & Admin Mail | **Done** — outbound SMTP, user request inbox, broadcast & delivery logs under **Administration → Mail** |
+| Two-factor authentication (TOTP 2FA) | **Done** — offline QR setup, 10 one-time recovery codes, enforcement policy (`off` / `admins` / `all`), and admin reset |
+| Page templates | **Done** — 18 built-in EN/VI templates, Global & per-space templates, *Save as template*, and backup/restore |
 | CI pipeline | Not set up — `make check` runs everything a CI job would, just not automatically on push |
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
 | `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
-| E-mail notifications (password changes, access requests, deactivation) | Planned |
 | AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions, cited Q&A in search, a multi-turn chat (with optional web search, weather and page reading), hybrid and semantic search with an optional self-hosted Ollama, a knowledge graph of related pages, a per-space content health report (stale pages with an AI check, broken links, orphans, duplicates) and the unanswered questions the wiki is missing | Done |
-
-The live, actively-worked list — including whatever is in progress right
-now — is [`TODO`](TODO).
 
 ## 📚 Documentation
 

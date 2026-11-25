@@ -91,6 +91,9 @@ export default async function WikiPageView({ params }: Params) {
           user.is_superuser ||
           space.my_permissions?.includes("restrictions") === true
         }
+        isSystemAdmin={Boolean(
+          user.is_superuser || user.global_permissions.includes("system_admin"),
+        )}
         currentUser={{
           id: user.id,
           username: user.username,
