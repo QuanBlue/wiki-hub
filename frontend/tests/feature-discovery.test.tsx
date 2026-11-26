@@ -7,6 +7,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FeatureDiscovery } from "@/components/home/feature-discovery";
+import { CHAT_OPEN_EVENT } from "@/lib/ai-chat";
 import { SEARCH_OPEN_EVENT } from "@/lib/cheat-sheet";
 import { LocaleProvider } from "@/lib/i18n/context";
 
@@ -47,42 +48,42 @@ describe("FeatureDiscovery sliding carousel", () => {
     });
     fireEvent.click(nextBtn);
 
-    // Indicator updates to 2/15
-    expect(screen.getByText("2/15")).toBeInTheDocument();
+    // Indicator updates to 2/24
+    expect(screen.getByText("2/24")).toBeInTheDocument();
 
-    // Click next button again -> 3/15
+    // Click next button again -> 3/24
     fireEvent.click(nextBtn);
-    expect(screen.getByText("3/15")).toBeInTheDocument();
+    expect(screen.getByText("3/24")).toBeInTheDocument();
 
-    // Click previous button -> back to 2/15
+    // Click previous button -> back to 2/24
     const prevBtn = screen.getByRole("button", {
       name: /Tính năng trước|Previous feature/i,
     });
     fireEvent.click(prevBtn);
-    expect(screen.getByText("2/15")).toBeInTheDocument();
+    expect(screen.getByText("2/24")).toBeInTheDocument();
   });
 
   it("auto-advances slides every 10 seconds when not paused", () => {
     vi.useFakeTimers();
     render(<FeatureDiscovery />);
 
-    expect(screen.getByText("1/15")).toBeInTheDocument();
+    expect(screen.getByText("1/24")).toBeInTheDocument();
 
     // Advance timer by 10000ms
     act(() => {
       vi.advanceTimersByTime(10000);
     });
 
-    // Should now be on slide 2 (2/15)
-    expect(screen.getByText("2/15")).toBeInTheDocument();
+    // Should now be on slide 2 (2/24)
+    expect(screen.getByText("2/24")).toBeInTheDocument();
 
     // Advance another 10000ms
     act(() => {
       vi.advanceTimersByTime(10000);
     });
 
-    // Should now be on slide 3 (3/15)
-    expect(screen.getByText("3/15")).toBeInTheDocument();
+    // Should now be on slide 3 (3/24)
+    expect(screen.getByText("3/24")).toBeInTheDocument();
   });
 
   it("pauses auto-advance on mouse hover and resumes on mouse leave", () => {
@@ -102,7 +103,7 @@ describe("FeatureDiscovery sliding carousel", () => {
     });
 
     // Still on slide 1 because it's paused
-    expect(screen.getByText("1/15")).toBeInTheDocument();
+    expect(screen.getByText("1/24")).toBeInTheDocument();
 
     // Mouse leave
     fireEvent.mouseLeave(container);
@@ -112,8 +113,8 @@ describe("FeatureDiscovery sliding carousel", () => {
       vi.advanceTimersByTime(10000);
     });
 
-    // Now moved to slide 2 (2/15)
-    expect(screen.getByText("2/15")).toBeInTheDocument();
+    // Now moved to slide 2 (2/24)
+    expect(screen.getByText("2/24")).toBeInTheDocument();
   });
 
   it("opens a feature guide with a real screenshot and steps", () => {
@@ -231,7 +232,7 @@ describe("FeatureDiscovery sliding carousel", () => {
         </LocaleProvider>,
       );
       fireEvent.click(screen.getByRole("button", { name: /Tính năng tiếp theo/i }));
-      expect(screen.getByText("2/15")).toBeInTheDocument();
+      expect(screen.getByText("2/24")).toBeInTheDocument();
       fireEvent.mouseEnter(screen.getByRole("region"));
       expect(screen.getByText("Tạm dừng")).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole("button", { name: /Xem cách dùng/i })[0]);
@@ -241,6 +242,41 @@ describe("FeatureDiscovery sliding carousel", () => {
     }
   });
 
+  it("opens newly added AI chat, templates, import, and 2FA guides", () => {
+    const chatListener = vi.fn();
+    window.addEventListener(CHAT_OPEN_EVENT, chatListener);
+    try {
+      render(<FeatureDiscovery />);
+
+      // Slide 16 (index 15): AI Chat with direct action and themed UI preview
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[15]);
+      expect(screen.getByText("WikiHub feature preview")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Open AI Chat/i }));
+      expect(chatListener).toHaveBeenCalledOnce();
+
+      // Slide 21 (index 20): Import documents with real screenshot from /help/
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[20]);
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/help/import-dialog.png");
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+      // Slide 23 (index 22): 2FA links to /account
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[22]);
+      expect(screen.getByRole("link", { name: "Account security" })).toHaveAttribute("href", "/account");
+    } finally {
+      window.removeEventListener(CHAT_OPEN_EVENT, chatListener);
+    }
+  });
+
+  it("renders Vietnamese preview copy for non-screenshot guides", () => {
+    render(
+      <LocaleProvider initialLocale="vi">
+        <FeatureDiscovery />
+      </LocaleProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /Xem cách dùng/i })[19]);
+    expect(screen.getByText("Minh họa tính năng WikiHub")).toBeInTheDocument();
+  });
+
   it("moves the slides with the speed of the scroll over the carousel", () => {
     vi.useFakeTimers();
     render(<FeatureDiscovery />);
@@ -248,16 +284,61 @@ describe("FeatureDiscovery sliding carousel", () => {
 
     // A gentle notch is one slide.
     fireEvent.wheel(track, { deltaY: 100 });
-    expect(screen.getByText("2/15")).toBeInTheDocument();
+    expect(screen.getByText("2/24")).toBeInTheDocument();
 
     // A fast flick runs through several.
     fireEvent.wheel(track, { deltaY: 320 });
-    expect(screen.getByText("6/15")).toBeInTheDocument();
+    expect(screen.getByText("6/24")).toBeInTheDocument();
 
     // Scrolling back goes the other way, and wraps round the loop.
     fireEvent.wheel(track, { deltaY: -800 });
-    expect(screen.getByText("1/15")).toBeInTheDocument();
+    expect(screen.getByText("1/24")).toBeInTheDocument();
     fireEvent.wheel(track, { deltaY: -100 });
-    expect(screen.getByText("15/15")).toBeInTheDocument();
+    expect(screen.getByText("24/24")).toBeInTheDocument();
+  });
+
+  it("animates slide transforms horizontally via requestAnimationFrame", () => {
+    let nextId = 1;
+    const frames = new Map<number, FrameRequestCallback>();
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        const id = nextId++;
+        frames.set(id, cb);
+        return id;
+      });
+    const cafSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((id) => {
+        frames.delete(id);
+      });
+
+    try {
+      render(<FeatureDiscovery />);
+      const track = screen.getByTestId("feature-track");
+      const slideNodes = Array.from(track.children) as HTMLElement[];
+
+      expect(slideNodes[0].style.transform).toBe("translateX(0%)");
+      expect(slideNodes[1].style.transform).toBe("translateX(100%)");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /Tính năng tiếp theo|Next feature/i }),
+      );
+
+      // Step through animation frames until settled on slide 2 (index 1).
+      let t = 0;
+      for (let i = 0; i < 60 && frames.size > 0; i++) {
+        t += 32;
+        const pending = Array.from(frames.entries());
+        frames.clear();
+        for (const [, cb] of pending) cb(t);
+      }
+
+      expect(slideNodes[0].style.transform).toBe("translateX(-100%)");
+      expect(slideNodes[1].style.transform).toBe("translateX(0%)");
+    } finally {
+      rafSpy.mockRestore();
+      cafSpy.mockRestore();
+    }
   });
 });

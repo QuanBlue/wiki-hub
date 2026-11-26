@@ -405,6 +405,11 @@ function AttachmentTile({
         {attachmentCaptionDialog}
         <a
           href={isUploading || editor.isEditable ? undefined : href}
+          download={
+            !isUploading && !editor.isEditable && href.startsWith("data:")
+              ? filename
+              : undefined
+          }
           data-attachment-href={href || undefined}
           data-diff-kind={diffKind || undefined}
           data-display-mode="link"
@@ -499,6 +504,11 @@ function AttachmentTile({
       {attachmentCaptionDialog}
       <a
         href={isUploading || editor.isEditable ? undefined : href}
+        download={
+          !isUploading && !editor.isEditable && href.startsWith("data:")
+            ? filename
+            : undefined
+        }
         data-attachment-href={href || undefined}
         data-diff-kind={diffKind || undefined}
         data-display-mode="card"

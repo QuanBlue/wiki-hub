@@ -14,7 +14,9 @@ BASE = "/api/v1/admin/statistics"
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["overview", "ai", "top-pages", "top-spaces"])
+@pytest.mark.parametrize(
+    "path", ["overview", "ai", "top-pages", "top-spaces", "top-contributors"]
+)
 async def test_statistics_require_an_administrator(
     client: AsyncClient, api_member_user: User, api_member_access_token: str, path: str
 ) -> None:
@@ -160,3 +162,55 @@ async def test_heartbeats_count_an_active_person_and_their_time(
                 UserActivityDaily.__table__.delete().where(UserActivityDaily.user_id == api_user.id)
             )
             await session.commit()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_custom_date_range_and_contributors_and_ai_model(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    client.cookies.set("wikihub_access", api_access_token)
+    today = datetime.now(UTC).date()
+    start = (today - timedelta(days=4)).isoformat()
+    end = today.isoformat()
+
+    ov = await client.get(f"{BASE}/overview", params={"start": start, "end": end})
+    assert ov.status_code == 200
+    ov_body = ov.json()
+    assert ov_body["range_days"] == 5
+    assert ov_body["start_date"] == start
+    assert ov_body["end_date"] == end
+    assert "previous" in ov_body and "new_pages" in ov_body["totals"]
+
+    # Invalid range (start > end) returns 422
+    bad = await client.get(f"{BASE}/overview", params={"start": end, "end": start})
+    assert bad.status_code == 422
+
+    # AI model breakdown & daily prompt/completion split
+    await record_ai_usage(
+        user_id=api_user.id,
+        feature="summarize",
+        model="gpt-test-model",
+        prompt_tokens=80,
+        completion_tokens=20,
+    )
+    try:
+        ai_res = await client.get(f"{BASE}/ai", params={"start": start, "end": end})
+        assert ai_res.status_code == 200
+        ai_body = ai_res.json()
+        assert "previous" in ai_body
+        assert any(row["model"] == "gpt-test-model" for row in ai_body["by_model"])
+        today_row = next(row for row in ai_body["daily"] if row["day"] == end)
+        assert today_row["prompt_tokens"] >= 80
+        assert today_row["completion_tokens"] >= 20
+    finally:
+        async with get_session_factory()() as session:
+            await session.execute(AiUsage.__table__.delete().where(AiUsage.user_id == api_user.id))
+            await session.commit()
+
+    # Top contributors
+    contrib_res = await client.get(f"{BASE}/top-contributors", params={"start": start, "end": end})
+    assert contrib_res.status_code == 200
+    contrib_body = contrib_res.json()
+    assert contrib_body["range_days"] == 5
+    assert isinstance(contrib_body["items"], list)

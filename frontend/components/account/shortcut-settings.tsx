@@ -40,6 +40,7 @@ const ACTION_KEY_PARTS: Record<string, string> = {
   "search.open": "SearchOpen",
   "sidebar.toggle": "SidebarToggle",
   "page.copyLink": "PageCopyLink",
+  "page.present": "PagePresent",
   "help.open": "HelpOpen",
   "page.edit": "PageEdit",
   "page.save": "PageSave",

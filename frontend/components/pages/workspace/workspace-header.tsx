@@ -22,6 +22,7 @@ import {
   Network,
   Pencil,
   Pin,
+  Presentation,
   RefreshCw,
   Save,
   Share2,
@@ -95,6 +96,7 @@ export type WorkspaceHeaderProps = {
   viewFullWidth: boolean;
   setViewFullWidth: (fullWidth: boolean) => void;
   related: PageRelated | null;
+  onOpenPresent: () => void;
   onOpenSummary: () => void;
   onOpenShareDialog: () => void;
   onOpenPublicShareDialog: () => void;
@@ -151,6 +153,7 @@ export function WorkspaceHeader({
   viewFullWidth,
   setViewFullWidth,
   related,
+  onOpenPresent,
   onOpenSummary,
   onOpenShareDialog,
   onOpenPublicShareDialog,
@@ -423,6 +426,20 @@ export function WorkspaceHeader({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  onClick={onOpenPresent}
+                  title={t("present.openTooltip")}
+                  aria-label={t("present.button")}
+                  className="hidden 2xl:inline-flex"
+                >
+                  <Presentation />
+                  <span className="hidden 2xl:inline">{t("present.button")}</span>
+                </Button>
+              ) : null}
+              {currentPage ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={onOpenSummary}
                   title={t("ai.summarize")}
                   aria-label={t("ai.button")}
@@ -552,6 +569,13 @@ export function WorkspaceHeader({
                   className="text-muted-foreground min-w-52 text-sm font-medium"
                 >
                   {/* Secondary page actions collapsed into ... like a stack when the screen narrows */}
+                  <DropdownMenuItem
+                    onSelect={onOpenPresent}
+                    className="2xl:hidden"
+                  >
+                    <Presentation />
+                    {t("present.button")}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={onOpenSummary}
                     className="2xl:hidden"
@@ -710,6 +734,12 @@ export function WorkspaceHeader({
                 align="end"
                 className="text-muted-foreground min-w-48 text-sm font-medium lg:hidden"
               >
+                {currentPage ? (
+                  <DropdownMenuItem onSelect={onOpenPresent}>
+                    <Presentation />
+                    {t("present.button")}
+                  </DropdownMenuItem>
+                ) : null}
                 {currentPage ? (
                   <DropdownMenuItem onSelect={onOpenSummary}>
                     <Sparkles />

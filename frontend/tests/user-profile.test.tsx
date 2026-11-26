@@ -395,6 +395,11 @@ describe("UserProfile activity", () => {
       const layout = view.container.firstElementChild as HTMLElement;
       expect(document.documentElement.style.overflow).toBe("hidden");
       expect(layout.style.height).toMatch(/px$/);
+      expect(layout).toHaveClass("lg:grid-rows-1", "lg:items-stretch");
+      const aside = layout.querySelector("aside");
+      expect(aside).toHaveClass("lg:min-h-0");
+      const scrollable = aside?.querySelector(".wh-scroll");
+      expect(scrollable).toHaveClass("lg:overflow-y-auto", "lg:min-h-0");
       fireEvent.resize(window);
       view.unmount();
       expect(document.documentElement.style.overflow).toBe("");

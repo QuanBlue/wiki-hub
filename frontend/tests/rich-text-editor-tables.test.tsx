@@ -401,3 +401,54 @@ describe("read-only table cell selection", () => {
     );
   });
 });
+
+describe("table cell drag and shift-click selection", () => {
+  it("selects multiple columns and rows when dragging across cells", async () => {
+    const { table } = await renderTable(GRID);
+    layOut(table);
+    const cells = cellsOf(table);
+
+    // Drag horizontally from cell 0 to cell 2 (all 3 columns in row 0).
+    fireEvent.mouseDown(cells[0]!, { button: 0, buttons: 1, clientX: 50, clientY: 20 });
+    fireEvent.mouseMove(cells[1]!, { buttons: 1, clientX: 250, clientY: 20 });
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(2);
+    // Column hover decoration must stay off while dragging.
+    expect(marked(table)).toHaveLength(0);
+
+    fireEvent.mouseMove(cells[2]!, { buttons: 1, clientX: 450, clientY: 20 });
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(3);
+
+    // Drag down into row 1 column 2 (all 6 cells in the 2x3 table).
+    fireEvent.mouseMove(cells[5]!, { buttons: 1, clientX: 450, clientY: 60 });
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(6);
+
+    fireEvent.mouseUp(window);
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(6);
+  });
+
+  it("clamps drags past the table edge and supports Shift+Click range selection", async () => {
+    const { table, container } = await renderTable(GRID);
+    layOut(table);
+    rect(table, 0, 600, 0, 80);
+    const cells = cellsOf(table);
+
+    // Drag from cell 0 past the right/bottom edge of the table (target = document.body).
+    fireEvent.mouseDown(cells[0]!, { button: 0, buttons: 1, clientX: 50, clientY: 20 });
+    fireEvent.mouseMove(document.body, { buttons: 1, clientX: 900, clientY: 200 });
+    fireEvent.mouseUp(window);
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(6);
+
+    // Place caret in cell 0 and Shift+Click cell 4 -> selects 2x2 (4 cells).
+    const editorEl = container.querySelector(".ProseMirror") as HTMLElement & {
+      editor?: { commands: { setTextSelection: (pos: number) => void } };
+    };
+    editorEl.editor?.commands.setTextSelection(4);
+    fireEvent.mouseDown(cells[4]!, {
+      button: 0,
+      shiftKey: true,
+      clientX: 250,
+      clientY: 60,
+    });
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(4);
+  });
+});

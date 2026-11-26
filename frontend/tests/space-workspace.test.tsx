@@ -547,7 +547,8 @@ describe("SpaceWorkspace overview", () => {
   it("opens space administration, and the import dialog", async () => {
     const { actor } = renderWorkspace();
 
-    await actor.click(screen.getByRole("button", { name: "Edit" }));
+    await actor.click(screen.getByRole("button", { name: "Space options" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Edit space" }));
     expect(
       screen.getByRole("dialog", { name: "Edit space" }),
     ).toBeInTheDocument();
@@ -560,8 +561,8 @@ describe("SpaceWorkspace overview", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("hides editing for readers and archived spaces", () => {
-    const { view } = renderWorkspace({
+  it("hides editing for readers and archived spaces", async () => {
+    const { actor, view } = renderWorkspace({
       canEdit: false,
       space: makeSpace({ my_role: null, my_permissions: ["admin"] }),
     });
@@ -570,10 +571,13 @@ describe("SpaceWorkspace overview", () => {
       screen.queryByRole("button", { name: "Import pages from files" }),
     ).toBeNull();
     // Admin through the permission list still gets space administration.
-    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Space options" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Edit space" }),
+    ).toBeInTheDocument();
     view.unmount();
 
-    renderWorkspace({
+    const archived = renderWorkspace({
       space: makeSpace({
         status: "archived",
         my_role: "viewer" as never,
@@ -582,7 +586,10 @@ describe("SpaceWorkspace overview", () => {
       }),
     });
     expect(screen.queryByRole("button", { name: "Edit overview" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    await archived.actor.click(
+      screen.getByRole("button", { name: "Space options" }),
+    );
+    expect(screen.queryByRole("menuitem", { name: "Edit space" })).toBeNull();
     expect(screen.getByText("No content yet")).toBeInTheDocument();
     expect(screen.getByText("X")).toBeInTheDocument();
   });
@@ -1263,33 +1270,36 @@ describe("SpaceWorkspace page view", () => {
     expect(screen.queryByRole("menuitem", { name: "Delete page" })).toBeNull();
   });
 
-  it("links to the space's Trash for whoever may delete pages here", () => {
-    const { view } = renderWorkspace({
+  it("links to the space's Trash for whoever may delete pages here", async () => {
+    const { actor, view } = renderWorkspace({
       currentPage: GUIDES,
       space: makeSpace({
         my_role: null,
         my_permissions: ["view", "delete_own"],
       }),
     });
-    expect(screen.getByRole("button", { name: "Trash" })).toBeInTheDocument();
-    // Not a space admin: no Edit space beside it (the page's own Edit opens a menu).
-    expect(
-      screen
-        .queryAllByRole("button", { name: "Edit" })
-        .filter((button) => button.getAttribute("aria-haspopup") !== "menu"),
-    ).toHaveLength(0);
+    await actor.click(screen.getByRole("button", { name: "Space options" }));
+    expect(screen.getByRole("menuitem", { name: "Page map" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Trash" })).toBeInTheDocument();
+    // Not a space admin: no Edit space in the menu.
+    expect(screen.queryByRole("menuitem", { name: "Edit space" })).toBeNull();
     view.unmount();
-    renderWorkspace({
+
+    const reader = renderWorkspace({
       currentPage: GUIDES,
       space: makeSpace({ my_role: null, my_permissions: ["view"] }),
     });
-    expect(screen.queryByRole("button", { name: "Trash" })).toBeNull();
+    await reader.actor.click(
+      screen.getByRole("button", { name: "Space options" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Page map" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Trash" })).toBeNull();
   });
 
   it("offers the content health report to the space's admins only", async () => {
-    const actor = userEvent.setup();
-    const { view } = renderWorkspace({ currentPage: GUIDES });
-    await actor.click(screen.getByRole("button", { name: "Health" }));
+    const { actor, view } = renderWorkspace({ currentPage: GUIDES });
+    await actor.click(screen.getByRole("button", { name: "Space options" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Health" }));
     expect(
       screen.getByRole("dialog", { name: "Content health" }),
     ).toBeInTheDocument();
@@ -1299,11 +1309,14 @@ describe("SpaceWorkspace page view", () => {
     expect(screen.queryByRole("dialog", { name: "Content health" })).toBeNull();
     view.unmount();
 
-    renderWorkspace({
+    const nonAdmin = renderWorkspace({
       currentPage: GUIDES,
       space: makeSpace({ my_role: null, my_permissions: ["view", "delete"] }),
     });
-    expect(screen.queryByRole("button", { name: "Health" })).toBeNull();
+    await nonAdmin.actor.click(
+      screen.getByRole("button", { name: "Space options" }),
+    );
+    expect(screen.queryByRole("menuitem", { name: "Health" })).toBeNull();
   });
 
   it("offers New on the home page and Create below it", () => {

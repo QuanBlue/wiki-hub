@@ -180,6 +180,11 @@ def _assign_heading_ids(soup: BeautifulSoup) -> list[tuple[Tag, int, str]]:
 #: ``_mark_table_of_contents_for_word``.
 WORD_TOC_FIELD_MARKER: Final = "WIKIHUB_INTERNAL_TABLE_OF_CONTENTS_FIELD_MARKER"
 
+#: Matches both the importer's placeholder (``div[data-type="tableOfContents"]``)
+#: and what the TipTap editor's ``TableOfContentsNode.renderHTML`` serializes
+#: when a page is saved (``nav[data-type="table-of-contents"]``).
+_TOC_SELECTOR: Final = '[data-type="tableOfContents"], nav[data-type="table-of-contents"]'
+
 
 def _mark_table_of_contents_for_word(soup: BeautifulSoup) -> None:
     """Leave a plain-text marker where Word's *native* Table of Contents
@@ -196,7 +201,7 @@ def _mark_table_of_contents_for_word(soup: BeautifulSoup) -> None:
     paragraph for ``export_docx.py`` to replace once Pandoc has produced the
     heading styles the field itself relies on.
     """
-    for placeholder in soup.select('[data-type="tableOfContents"]'):
+    for placeholder in soup.select(_TOC_SELECTOR):
         marker = soup.new_tag("p")
         marker.string = WORD_TOC_FIELD_MARKER
         placeholder.replace_with(marker)
@@ -232,7 +237,7 @@ def _render_table_of_contents(soup: BeautifulSoup) -> None:
     is the one way left to indent an entry that survives being reparsed by
     the editor, or by Pandoc, unchanged.
     """
-    placeholders = soup.select('[data-type="tableOfContents"]')
+    placeholders = soup.select(_TOC_SELECTOR)
     if not placeholders:
         return
     headings = _assign_heading_ids(soup)
@@ -342,10 +347,50 @@ async def _inline_attachments(
         anchor["download"] = anchor.get("data-attachment", "")
 
 
-def _render_diagrams_for_export(soup: BeautifulSoup, diagram_images: list[str] | None = None) -> None:
-    diagrams = soup.find_all("div", attrs={"data-type": "diagram"})
+def _render_task_lists_for_word(soup: BeautifulSoup) -> None:
+    """Turn task-list items into checkbox-prefixed items for Pandoc/Word.
+
+    TipTap's TaskItem serializes ``<li data-checked="true"><label><input
+    type="checkbox"><span></span></label><div><p>Task</p></div></li>`` (and
+    importers emit ``<li data-checked="true"><input type="checkbox"/><span>Task</span></li>``).
+    Pandoc drops ``<input type="checkbox">`` and turns the empty ``<label>``
+    into a blank paragraph above every task item, losing the checked state
+    entirely. Stripping the checkbox chrome and prepending ``☑ ``/``☐ `` keeps
+    each task item on a single line with its real state visible in Word.
+    """
+    for li in soup.select("li[data-checked]"):
+        checked = str(li.get("data-checked", "")).lower() == "true"
+        marker = "☑ " if checked else "☐ "
+        for node in li.select('label, input[type="checkbox"]'):
+            node.decompose()
+        target = li.find(["p", "span"]) or li
+        target.insert(0, soup.new_string(marker))
+
+
+def _find_diagram_elements(soup: BeautifulSoup) -> list[Tag]:
+    """Find every Mermaid diagram element in document order, matching what
+    ``RichTextContent`` mounts as a ``DiagramNode`` in the browser."""
+    diagrams: list[Tag] = []
+    for el in soup.find_all(["div", "pre"]):
+        if el.get("data-type") == "diagram":
+            diagrams.append(el)
+            continue
+        if (
+            el.name == "pre"
+            and el.find_parent(attrs={"data-type": "diagram"}) is None
+            and el.select_one("code.language-mermaid") is not None
+        ):
+            diagrams.append(el)
+    return diagrams
+
+
+def _render_diagrams_for_export(
+    soup: BeautifulSoup, diagram_images: list[str] | None = None
+) -> None:
+    diagrams = _find_diagram_elements(soup)
     for i, el in enumerate(diagrams):
-        caption = el.get("data-caption")
+        raw_caption = el.get("data-caption")
+        caption = str(raw_caption) if raw_caption else ""
         if diagram_images and i < len(diagram_images) and diagram_images[i]:
             img_tag = soup.new_tag("img", src=diagram_images[i], alt="Diagram")
             p_tag = soup.new_tag("p", attrs={"class": "diagram-rendered"})
@@ -360,7 +405,9 @@ def _render_diagrams_for_export(soup: BeautifulSoup, diagram_images: list[str] |
             else:
                 el.replace_with(p_tag)
         else:
-            code = el.get("data-code") or ""
+            code_el = el.select_one("code.language-mermaid")
+            raw_code = el.get("data-code")
+            code = str(raw_code) if raw_code else (code_el.get_text() if code_el else "")
             pre_tag = soup.new_tag("pre", attrs={"class": "mermaid"})
             code_tag = soup.new_tag("code", attrs={"class": "language-mermaid"})
             code_tag.string = code
@@ -390,6 +437,7 @@ async def prepare_export_html(
     _wrap_bare_header_rows(soup)
     if native_word_toc:
         _mark_table_of_contents_for_word(soup)
+        _render_task_lists_for_word(soup)
         _render_diagrams_for_export(soup, diagram_images=diagram_images)
     else:
         _render_table_of_contents(soup)

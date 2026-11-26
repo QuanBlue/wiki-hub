@@ -13,6 +13,7 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Presentation,
   Printer,
   ShieldAlert,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import { toast } from "sonner";
 import { Wordmark } from "@/components/brand/logo";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { PagePresentationModal } from "@/components/pages/page-presentation-modal";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +30,8 @@ import { RichTextContent } from "@/components/pages/rich-text-editor";
 import { ApiError, api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDate } from "@/lib/i18n/format";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
+import { PRESENT_OPEN_EVENT } from "@/lib/page-presentation";
 import { cn } from "@/lib/utils";
 import type { PublicShareView } from "@/types/api";
 
@@ -55,6 +59,38 @@ export default function PublicSharePage({ params }: PageProps) {
   const [copied, setCopied] = useState(false);
   // Shared documents default to the full viewport width, like the page view.
   const [fullWidth, setFullWidth] = useState(true);
+  const [presentOpen, setPresentOpen] = useState(false);
+
+  useEffect(() => {
+    const canPresent = Boolean(
+      shareData && (!shareData.has_password || shareData.is_password_verified),
+    );
+    if (!canPresent) return;
+
+    const openPresent = () => setPresentOpen(true);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (matchesShortcut("page.present", event)) {
+        event.preventDefault();
+        setPresentOpen(true);
+      }
+    };
+    window.addEventListener(PRESENT_OPEN_EVENT, openPresent);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(PRESENT_OPEN_EVENT, openPresent);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [shareData]);
 
   useEffect(() => {
     let active = true;
@@ -167,6 +203,18 @@ export default function PublicSharePage({ params }: PageProps) {
         <div className="flex items-center gap-2">
           {shareData && (!shareData.has_password || shareData.is_password_verified) ? (
             <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPresentOpen(true)}
+                className="h-8 gap-1.5 text-xs"
+                title={t("present.openTooltip")}
+              >
+                <Presentation className="size-3.5" />
+                <span className="hidden sm:inline">{t("present.button")}</span>
+              </Button>
+
               <Button
                 type="button"
                 variant="ghost"
@@ -423,6 +471,21 @@ export default function PublicSharePage({ params }: PageProps) {
           </div>
         </div>
       </main>
+
+      <PagePresentationModal
+        key={`public-present-${token ?? ""}`}
+        open={presentOpen}
+        onOpenChange={setPresentOpen}
+        title={shareData.title}
+        content={shareData.content_html}
+        contentFormat="html"
+        spaceName={shareData.space_name}
+        spaceKey={shareData.space_key}
+        pageSlug={null}
+        updatedAtFormatted={formatDate(shareData.updated_at, locale)}
+        labels={[]}
+        allowAiDeck={false}
+      />
 
       {/* Minimal Footer */}
       <footer className="border-border mt-auto border-t py-6 text-center text-xs text-muted-foreground print:hidden">

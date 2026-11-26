@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 
 import { RichTextContent } from "@/components/pages/rich-text-editor";
+import { useThemeSettings } from "@/components/theme-color-provider";
 import { getFontFamilyCss } from "@/lib/font-presets";
 import type { ExportBundle } from "@/types/api";
 
@@ -24,6 +25,7 @@ import type { ExportBundle } from "@/types/api";
  */
 export function ExportShell({ bundle }: { bundle: ExportBundle }) {
   const { setTheme } = useTheme();
+  const { setSiteName, setThemeColor, setDefaultFont } = useThemeSettings();
   const rootRef = useRef<HTMLDivElement>(null);
   const signaledRef = useRef(false);
 
@@ -32,8 +34,20 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
   // this browser context happened to inherit.
   useEffect(() => {
     setTheme(bundle.theme);
+    if (bundle.site?.site_name) setSiteName(bundle.site.site_name);
+    if (bundle.site?.theme_color) setThemeColor(bundle.site.theme_color);
+    if (bundle.site?.default_font) setDefaultFont(bundle.site.default_font);
     document.documentElement.dataset.export = "true";
-  }, [setTheme, bundle.theme]);
+  }, [
+    setTheme,
+    setSiteName,
+    setThemeColor,
+    setDefaultFont,
+    bundle.theme,
+    bundle.site?.site_name,
+    bundle.site?.theme_color,
+    bundle.site?.default_font,
+  ]);
 
   // If content somehow never finishes settling (a stuck font load, a broken
   // image URL that never resolves or rejects), fail the capture cleanly
@@ -73,32 +87,71 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
     // in; the fallback only matters for jsdom, which doesn't implement it.
     const fontsReady = document.fonts?.ready ?? Promise.resolve();
 
-    const waitForDiagrams = () => {
-      const pendingDiagrams = Array.from(
-        rootRef.current?.querySelectorAll('[data-diagram-pending="true"]') ?? [],
-      );
-      if (pendingDiagrams.length === 0) return Promise.resolve();
+    // Tiptap's ReactNodeViewRenderer queues its initial portal mount via
+    // queueMicrotask, so when RichTextContent's onReady effect fires, any
+    // `.react-renderer` host for a diagram, image, or attachment tile may
+    // still be empty. Wait for those portals to populate before inspecting
+    // their `[data-diagram-pending]` / `<img>` descendants.
+    const waitForNodeViews = () => {
+      const emptyRenderers =
+        rootRef.current?.querySelectorAll(".react-renderer:empty") ?? [];
+      if (emptyRenderers.length === 0) return Promise.resolve();
       return new Promise<void>((resolve) => {
         const interval = window.setInterval(() => {
           const remaining =
-            rootRef.current?.querySelectorAll(
-              '[data-diagram-pending="true"]',
-            ) ?? [];
+            rootRef.current?.querySelectorAll(".react-renderer:empty") ?? [];
           if (remaining.length === 0) {
             window.clearInterval(interval);
             resolve();
           }
-        }, 50);
+        }, 25);
         window.setTimeout(() => {
           window.clearInterval(interval);
           resolve();
-        }, 6000);
+        }, 2000);
       });
+    };
+
+    const waitForDiagrams = () =>
+      waitForNodeViews().then(() => {
+        const pendingDiagrams = Array.from(
+          rootRef.current?.querySelectorAll('[data-diagram-pending="true"]') ??
+            [],
+        );
+        if (pendingDiagrams.length === 0) return;
+        return new Promise<void>((resolve) => {
+          const interval = window.setInterval(() => {
+            const remaining =
+              rootRef.current?.querySelectorAll(
+                '[data-diagram-pending="true"]',
+              ) ?? [];
+            if (remaining.length === 0) {
+              window.clearInterval(interval);
+              resolve();
+            }
+          }, 50);
+          window.setTimeout(() => {
+            window.clearInterval(interval);
+            resolve();
+          }, 6000);
+        });
+      });
+
+    const decodeLateImages = () => {
+      const lateImages = Array.from(
+        rootRef.current?.querySelectorAll("img") ?? [],
+      ).filter((img) => !images.includes(img));
+      if (lateImages.length === 0) return Promise.resolve();
+      return Promise.all(
+        lateImages.map((img) =>
+          img.complete ? Promise.resolve() : img.decode().catch(() => undefined),
+        ),
+      );
     };
 
     Promise.all([
       fontsReady,
-      waitForDiagrams(),
+      waitForDiagrams().then(decodeLateImages),
       ...images.map((img) =>
         img.complete ? Promise.resolve() : img.decode().catch(() => undefined),
       ),
@@ -130,7 +183,10 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
       }
       style={spaceFontStyle}
     >
-      <h1 className="mb-6 text-3xl font-bold" style={{ fontFamily: "var(--font-page)" }}>
+      <h1
+        className="border-border mb-6 border-b pb-3 text-3xl font-bold"
+        style={{ fontFamily: "var(--font-page)" }}
+      >
         {bundle.page.title}
       </h1>
       <RichTextContent

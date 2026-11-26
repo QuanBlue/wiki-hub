@@ -85,6 +85,7 @@ from app.schemas.ai import (
     PageClarify,
     PageDraft,
     PageDraftRequest,
+    PageSlideDeck,
     PageSuggestions,
     PageSummary,
     QuestionGroupList,
@@ -309,6 +310,24 @@ async def summarize_page(
     ] = None,
 ) -> PageSummary:
     return await service.summarize_page(key, slug, refresh=refresh, lang=lang)
+
+
+@router.post(
+    "/spaces/{key}/pages/{slug}/slides",
+    response_model=PageSlideDeck,
+    summary="Condense a page into an executive slide deck (cached until the page changes)",
+)
+async def generate_slide_deck(
+    key: str,
+    slug: str,
+    service: AIServiceDep,
+    refresh: Annotated[bool, Query()] = False,
+    lang: Annotated[
+        str | None,
+        Query(max_length=8, description="Language code to write in; omit for the page's own"),
+    ] = None,
+) -> PageSlideDeck:
+    return await service.generate_slide_deck(key, slug, refresh=refresh, lang=lang)
 
 
 @router.post(

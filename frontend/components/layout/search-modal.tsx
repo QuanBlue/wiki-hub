@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { AnswerTimeoutError, askWiki, sourceHref, type AnswerSource } from "@/lib/ai-answer";
 import { openChat } from "@/lib/ai-chat";
+import { openPagePresentation } from "@/lib/page-presentation";
 import { openSpaceTrash } from "@/lib/space-trash";
 import { aiStatus } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
@@ -280,8 +281,8 @@ export function SearchModal({
   const navMatches = useMemo(
     () =>
       command
-        ? matchCommands(command.name, user, t, aiOn, spaceKeyFromPath(pathname))
-        : matchNavigation(cleanQuery || query, user, t),
+        ? matchCommands(command.name, user, t, aiOn, spaceKeyFromPath(pathname), pathname)
+        : matchNavigation(cleanQuery || query, user, t, 5, pathname),
     [command, cleanQuery, query, user, t, aiOn, pathname],
   );
   // ":help <words>" looks the words up in the Help guides. They are large, so load them only now.
@@ -381,6 +382,7 @@ export function SearchModal({
         navigate(guideHref(item.data.section));
       } else if (item.kind === "nav") {
         if (item.data.entry.id === "chat") openChat();
+        else if (item.data.entry.id === "present") openPagePresentation();
         else if (item.data.entry.id === "trash") {
           const key = spaceKeyFromPath(pathname);
           if (key) openSpaceTrash(key);

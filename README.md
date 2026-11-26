@@ -1,534 +1,118 @@
 <div align="center">
 
-<img src="assets/favicon_app.png" alt="WikiHub icon" width="200">
+<img src="assets/social-preview.png" alt="WikiHub: open-source, self-hosted alternative to Confluence and Notion" width="100%">
 
 # WikiHub
 
-**The open-source, self-hosted alternative to Confluence and Notion**
+**The open-source, self-hosted alternative to Confluence and Notion.**<br>
+Spaces, hierarchical pages, a rich editor with revision history, attachments, Confluence migration, offline export, and an optional AI assistant — all on infrastructure you control.<br>
+No per-seat pricing. No vendor lock-in.
 
-No per-seat pricing, no vendor lock-in — Spaces, hierarchical Pages, a rich
-editor with full revision history, attachments, search, one-command
-Confluence migration, and Markdown/HTML/Word export, all on infrastructure
-you control. Built as a **modular monolith**, deployable with one command via
-Docker Compose.
+[![Stars](https://img.shields.io/github/stars/QuanBlue/wiki-hub?color=f6cf8f)](https://github.com/QuanBlue/wiki-hub/stargazers)
+[![Forks](https://img.shields.io/github/forks/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/network/members)
+[![Last Commit](https://img.shields.io/github/last-commit/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/commits/master)
+[![License](https://img.shields.io/badge/license-Apache--2.0-0a64d8)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-If WikiHub is useful to you, a ⭐ on the repo helps other teams find it.
+**English** · [Tiếng Việt](README.vi.md) · **[Website](https://quanblue.github.io/wiki-hub/)** · [Demo & Screenshots](docs/demo) · [Issues](https://github.com/QuanBlue/wiki-hub/issues)
 
-[![contributors](https://img.shields.io/github/contributors/QuanBlue/wiki-hub?color=blue)](https://github.com/QuanBlue/wiki-hub/graphs/contributors)
-[![last commit](https://img.shields.io/github/last-commit/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/commits/master)
-[![forks](https://img.shields.io/github/forks/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/network/members)
-[![stars](https://img.shields.io/github/stars/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/stargazers)
-[![open issues](https://img.shields.io/github/issues/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/issues)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](#-license)
-
-**[🌐 Website](https://quanblue.github.io/wiki-hub/) • [Demo](#️-demo) • [Documentation](#-documentation) • [Report Bug](https://github.com/QuanBlue/wiki-hub/issues) • [Request Feature](https://github.com/QuanBlue/wiki-hub/issues)**
-
-> **Status: the core platform is built and in daily use** — Spaces, Pages, full
-> revision history, authentication & RBAC, the rich editor, attachments,
-> search, Confluence import/export, and the optional AI assistant are all
-> shipped. See
-> [Roadmap](#-roadmap) for what's still open.
+<p align="center">
+  <img src="docs/demo/assets/demo-editor.gif" alt="WikiHub demo: sign in, open a space and page, edit with the slash menu, and save" width="800">
+</p>
 
 </div>
 
----
+## Why WikiHub
 
-## 📖 Table of Contents
+- **Self-hosted & free.** Apache-2.0 open source with no per-seat pricing; your team's knowledge stays on your own servers.
+- **One-command Docker setup.** `./scripts/run.sh` creates `.env`, resolves host-port conflicts, runs migrations, seeds the admin account, and brings the stack up.
+- **First-class Confluence migration.** Import real Confluence XML or HTML space exports into structured Spaces and Pages with a live progress report, or export back to Confluence XML, Markdown, HTML, PDF, or Word.
+- **Fine-grained access control.** Open or Restricted spaces, per-user and per-group grants, page-level inheritance and allow-lists, plus an Effective Permissions view.
+- **Security built in.** Argon2id passwords, rotating JWTs, optional TOTP 2FA with recovery codes, audited admin impersonation, and strict MIME/magic-byte upload validation.
+- **Optional AI assistant (BYO endpoint).** Connect any OpenAI-compatible API for cited Q&A, streaming chat, page drafting, TL;DR summaries, translation, and hybrid semantic search (with optional self-hosted Ollama). Zero overhead when disabled.
+- **English & Vietnamese.** Instant top-bar language switch without reload, 18 built-in EN/VI templates, and accent-insensitive search.
 
-- [WikiHub](#wikihub)
-  - [📖 Table of Contents](#-table-of-contents)
-  - [🎯 Why WikiHub?](#-why-wikihub)
-  - [📽️ Demo](#️-demo)
-  - [⭐ Key Features](#-key-features)
-  - [🏗️ Architecture](#️-architecture)
-  - [🧰 Tech Stack](#-tech-stack)
-  - [🛠️ Getting Started](#️-getting-started)
-    - [📌 Prerequisites](#-prerequisites)
-    - [🔑 Quick Start (Docker)](#-quick-start-docker)
-    - [🚦 Port Conflicts](#-port-conflicts)
-    - [⚙️ Local Development (without Docker)](#️-local-development-without-docker)
-  - [🧬 Database Migrations](#-database-migrations)
-  - [🧪 Tests](#-tests)
-  - [📥 Importing from Confluence](#-importing-from-confluence)
-  - [📤 Exporting](#-exporting)
-  - [🚢 Deployment](#-deployment)
-  - [🔒 Security](#-security)
-    - [🕵️ Account Switching (Impersonation)](#️-account-switching-impersonation)
-  - [🗺️ Roadmap](#️-roadmap)
-  - [📚 Documentation](#-documentation)
-  - [✨ Credits](#-credits)
-  - [📜 License](#-license)
+## Features
 
-## 🎯 Why WikiHub?
+**Knowledge & editing**
 
-| | WikiHub | Confluence | Notion |
-|---|:---:|:---:|:---:|
-| Self-hosted | ✅ always | Data Center only, paid | ❌ |
-| Open source | ✅ Apache-2.0 | ❌ | ❌ |
-| Per-seat pricing | ❌ free | ✅ (paid plans) | ✅ (paid plans) |
-| Your data stays on your infrastructure | ✅ | Data Center only | ❌ |
-| One-command migration from Confluence | ✅ | — | ❌ |
-| Full revision history & restore | ✅ | ✅ | ✅ |
-| Space & page-level permissions | ✅ | ✅ | ✅ (varies by plan) |
+- [Spaces & pages](docs/demo#a-page-rendered): nested page trees, drag-and-drop moves, favorites, and Trash with configurable retention
+- [Rich-text editor](docs/demo#editing-a-page): Tiptap WYSIWYG with `/` slash commands, tables, code blocks, callouts, toggles, and raw Markdown/HTML mode
+- **Page templates**: 18 built-in EN/VI templates, global & per-space templates, and one-click *Save as template*
+- [Revisions & drafts](docs/demo#drafts--recovery): immutable version history, visual diffs, non-destructive restore, and auto-saved drafts
+- **Comments**: threaded replies, `@mentions` with notifications, likes, and discussion filters
+- **Attachments & Office editing**: images, video (subtitles & PiP), PDFs, and in-place Word/Excel/PowerPoint editing via ONLYOFFICE
 
-WikiHub exists for teams who want structured enterprise documentation — Spaces,
-nested Pages, a rich editor, permissions — without a per-seat bill or their
-knowledge base living on someone else's servers. Migrating off Confluence is
-a first-class flow, not an afterthought: point WikiHub at a real Confluence
-XML or HTML export and it comes in as actual Spaces and Pages, not a wall of
-unformatted text.
+**Search, import & export**
 
-## 📽️ Demo
+- [Search & commands](docs/demo#global-search-shortcuts--commands): `Ctrl`/`⌘`+`K` accent-insensitive search, **Go to** navigation, and `:commands` (`:help`, `:trash`, `:chat`, `:ask`)
+- **Document import**: batch-import Word, PDF, Excel, CSV, HTML, Markdown, EPUB, ODT, RTF, or shared Google Docs/Sheets links, with optional AI review & translation
+- [Confluence import & export](docs/demo#backup--migration): XML and HTML space imports with unsupported-macro reports; Confluence Data Center XML export
+- **Offline export**: export a page, subtree, Space, or entire instance to Markdown/HTML ZIP, PDF, or Word (`.docx`)
 
-New to WikiHub? The **[project website](https://quanblue.github.io/wiki-hub/)** gives a
-guided overview of what it does, its features and how to deploy it. The captures below show the
-real interface.
+**AI assistant (optional)**
 
-<div align="center">
+- [Cited Q&A & chat](docs/demo#ai-features): streaming multi-turn chat grounded in pages you can read and attached files, optional web search, and confirmation-gated actions
+- **Reading & writing tools**: one-click TL;DR, *Create page with AI*, `Ctrl`+`Space` in-editor assistant, selection explain/translate, and label/related-page suggestions
+- **Knowledge graph & content health**: related-page map, stale-page detection, broken links, orphans, duplicates, and unanswered questions
+- **Hybrid & semantic search**: keyword + vector ranking via any OpenAI-compatible endpoint or UI-managed self-hosted Ollama
 
-<img src="docs/demo/assets/demo-editor.gif" alt="Sign in, land in a space, open a page from the page tree, edit it with the slash menu, and save — end to end" width="700">
+**Administration & workspace**
 
-<sub>Sign in → space → page → edit with the <code>/</code> slash menu → save, end to end.</sub>
+- [Permissions & auth](docs/demo#permissions--access-control): RBAC, Effective Permissions, TOTP 2FA, audited account impersonation, and audit logs
+- [Backups & operations](docs/demo#backup--migration): scheduled resumable backups, read-only server/container monitor, usage statistics, SMTP mail, and an issue tracker with Word export
+- [Branding & polish](docs/demo#theme--branding): custom themes & logos, editable EN/VI sign-in page, system announcements, personal status, welcome & [seasonal effects](docs/demo#seasonal-effects--festivals)
 
-<br>
+<table>
+  <tr>
+    <td><img src="docs/demo/assets/screenshot-page.png" alt="Rendered wiki page with table of contents and sidebar"></td>
+    <td><img src="docs/demo/assets/screenshot-search.png" alt="Ctrl+K global search and commands"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/demo/assets/screenshot-permissions.png" alt="Space and page permissions with Effective Permissions"></td>
+    <td><img src="docs/demo/assets/screenshot-festival-home.png" alt="WikiHub Home with seasonal festival theme"></td>
+  </tr>
+</table>
 
-<img src="docs/demo/assets/demo-search.gif" alt="Ctrl+K search: finding pages, a Go to shortcut for keyboard shortcuts, the : command list, and :help searching the Help guides" width="700">
+**[Every feature in detail, with screenshots →](docs/demo)**
 
-<sub><code>Ctrl</code>+<code>K</code>: find pages, jump to a place in the app, or run a <code>:command</code> such as <code>:help change password</code>.</sub>
+## Quick start
 
-<br>
-
-<img src="docs/demo/assets/demo-mobile.gif" alt="The same sign-in-to-save flow at a Galaxy S24-class phone width" width="220">
-
-<sub>The same flow at phone width — see <a href="docs/demo#small-screens">docs/demo</a> for details.</sub>
-
-<img src="docs/demo/assets/screenshot-festival-home.png" alt="Home during a seasonal festival: a themed top bar, falling hearts and Hubby the owl presenting a greeting" width="720">
-
-<sub>A seasonal festival on Home — Hubby greets you in the holiday's own scene. See <a href="docs/demo#seasonal-effects--festivals">docs/demo</a>.</sub>
-
-**Full walkthrough with screenshots of every feature: [`docs/demo`](docs/demo).**
-The editing and search captures were retaken on 3 November 2026; the phone capture is from 18 October 2026 (see [docs/demo](docs/demo) for which is which).
-
-</div>
-
-## ⭐ Key Features
-
-- **Spaces & hierarchical pages** — per-team knowledge containers with nested page
-  trees, drag-anywhere moves, and per-user/per-group permissions down to a single
-  page.
-- **Page templates** — create new pages from 18 built-in EN/VI templates (*Meeting
-  Notes*, *Runbook*, *ADR*, *Post-mortem*, *Onboarding*, *RFC*, *PRD*, *Sprint
-  Retrospective*, *Project Plan*, *Release Notes*, *API Spec*, *System
-  Architecture*, *Deployment Checklist*, *Security Review*, *Weekly Status*,
-  *1:1 Notes*, *SOP*, *Troubleshooting & FAQ*), Global templates managed under
-  **Administration → Templates**, or per-space templates managed by Space
-  Owners/Admins. Save any existing page as a reusable template in one click;
-  templates travel with backups.
-- **Rich-text editor** — Tiptap-based WYSIWYG with a sticky toolbar, `/` slash
-  commands, tables, code blocks, callouts, toggles, and a raw Markdown/HTML source
-  mode you can switch into at any time.
-- **Full revision history** — every save is an immutable snapshot with a visual
-  diff and one-click restore that never destroys later history. Unsaved edits
-  are kept as a per-user **draft** (auto-saved, or with *Save draft*) that is
-  offered back the next time you open the editor.
-- **Trash & restore** — deleting a page moves it to its space's Trash with its
-  revisions, comments and attachments, restorable for 30 days by default (an
-  administrator sets the period under **Administration → Settings**) from the space
-  sidebar, `:trash` in search, or the *Undo* on the delete toast; space admins can
-  delete pages for good. Pages in
-  the Trash are left out of search, the tree, activity and AI answers, and travel
-  with backups.
-- **Page comments** — threaded replies, `@mentions` with notifications, likes
-  (click a count to see who liked a page or comment), inline edit and
-  delete-with-replies. Sort or narrow a discussion (*Oldest*, *Newest*, *Most
-  liked*, *Mentions me*, *My comments*); the comment box stays pinned to the
-  bottom of the screen, and `Enter` sends while `Shift`+`Enter` breaks the line.
-- **Attachments & Office editing** — images, video (with subtitles, audio tracks,
-  and Picture-in-Picture), PDFs, and in-place editing of Word/Excel/PowerPoint via
-  an embedded ONLYOFFICE Document Server.
-- **Document import with a review** — turn Word, PDF, HTML, Markdown, EPUB, ODT or RTF
-  files into pages, up to 20 at a time, in a background job with per-file progress. Excel and
-  CSV files become tables (a workbook of several sheets becomes a page with a child page per
-  sheet; merged cells, bold, colours, links and number formats carry over), and a Google Sheet or
-  Google Doc shared by link is imported from its link alone. Column widths are fitted to what a
-  column usually holds rather than copied from the sheet: a column of codes stays narrow even
-  when a few notes above the table are long (they wrap), a column of paragraphs gets the room,
-  and a table of many text columns scrolls sideways instead of squeezing them. Optionally
-  (on by default) each page is then **reviewed against its file**: the original is read again
-  on its own (Word paragraphs and styles, HTML blocks, PDF text blocks) and compared with the
-  page — lost text, heading levels, lists, code and quotes that became paragraphs, broken
-  tables, repeated page headers and footers, block order, and how it looks (cell text turned into a
-  quote, unreadable text on a coloured cell, forced black). What is certain is mended without a
-  model; with the AI assistant set up, it mends the rest in the editor's own formats, a
-  window of the page at a time (a clean file costs no model call, at most four calls per
-  file). A change is kept only if the page then agrees with the file better and lost no text;
-  it is saved as its own revision ("Review of the import…"), so the page as converted stays in
-  the history, and the result is shown per file. A review that fails or times out never costs
-  the import. Each step of the review is logged live on the file's progress card, and nested lists get
-  their nesting back from the file's own indents. Optionally **translate** each page into English
-  or Vietnamese with the AI assistant, piece by piece, accepting a piece only when its tags,
-  links, images and code are unchanged, so tables and lists stay exactly as they are; the page in
-  its own language stays in its history; the title stays the file's name, a document already in the
-  language chosen or over about 700,000 characters is skipped, and translating has its own hourly
-  allowance (`ai_translate_rate_limit`, 1500/hour by default) and a four-hour job limit. The import
-  dialog groups both under **AI options**, each with a one-line summary and an **i** button for
-  the full account, and the progress card shows a live log of each.
-- **Confluence import & export** — import a Confluence XML or HTML space export
-  with a live progress report, or export to Confluence Data Center's own XML
-  format for a one-way hand-off.
-- **Export to Markdown/HTML/Word** — a single page, a subtree, a Space, or the
-  whole instance, packaged as an offline-browsable ZIP.
-- **Fine-grained access control** — Open or Restricted spaces, per-user/per-group
-  permission grants, page-level allow-lists, and an Effective Permissions view
-  that resolves exactly what any one person can do. In an Open space every user
-  and group can be named on a page. Child pages **inherit** their parent's View
-  and Edit access by default; switch inheritance off to start from a copy of the
-  parent's access and customise it, or keep inheriting and narrow further with a
-  page's own list. The foot of every page says how many users and groups can
-  actually read it (or *all*, when nothing narrows it).
-- **Search, shortcuts & commands** — one `Ctrl`/`⌘`+`K` box across every space and
-  page you have permission to see (accents optional, English/Vietnamese word pairs
-  matched). It also lists places in the app under **Go to** (*change password* opens
-  your account's password form, *manage users* opens Administration → Users, only for
-  those allowed), and starting with `:` runs a command: `:help <words>` searches the
-  Help guides, `:account`, `:password`, `:users`, `:settings`, `:chat`,
-  `:ask <question>` and more. AI commands stay listed but disabled while the
-  assistant is off.
-- **Theming & branding** — curated color palettes or a custom hex color, logo
-  presets or a custom upload, and a live preview before anything goes live.
-- **Seasonal effects & holiday calendar** — *Administration → Settings → Seasonal
-  Effects* dresses WikiHub for the occasion with hand-drawn art: a line-art
-  watermark and a doodle-framed holiday greeting on the top bar, a glow that sweeps
-  across it while you navigate, decorated page margins and falling particles. Set
-  it *Off*, *Auto* (by date, from a calendar of 35+ Vietnamese and international
-  holidays, solar and lunar — Tết, Giỗ Tổ, Trung Thu, Quốc khánh, Halloween,
-  Christmas…, each with a short history, and editable) or *Manual*. Every change is
-  saved as you make it; *Preview* opens a scaled copy of Home or of the sign-in page
-  first. Administrators are reminded a few days ahead (bell and optional e-mail),
-  Home lists the upcoming holidays with an *Activate now* button, and the effect
-  switches itself off for people who ask their device to reduce motion.
-- **Welcome effects on Home** — each person picks, from the palette button over their
-  cover or *Your account → Edit profile*, one of 26 themes (Classic, Games, Adventure,
-  Styles) that plays for about five seconds when someone visits their Home: **Hubby**,
-  the WikiHub owl, presents the avatar beside a halo and sparkles, with an optional
-  140-character greeting in a speech bubble. Press the play button on a card to preview
-  it in a mock Home; visitors can *Skip*, and a still greeting replaces the animation
-  under reduced motion. While a seasonal theme is running, your own Home instead plays
-  the holiday's scene with a festive greeting and Hubby dressed for it (an áo dài for
-  Tết), skippable for the rest of the session.
-- **Personal status** — *Set status* in the account menu shares an icon and up to 140
-  characters (or a preset such as *Free to chat*) with the workspace as a thought bubble
-  on your profile and avatar, cleared automatically after 1 hour, 4 hours, 24 hours,
-  7 days or never.
-- **Profiles** — a cover and avatar that can be repositioned without re-uploading, an
-  image viewer, a contribution chart per year, and the personal-data policy accepted at
-  sign-in (administrators see who has accepted under *Users*).
-- **Sign-in page & announcements** — administrators rewrite the left panel of the
-  sign-in page (headline, blurbs, footer, illustration) separately for English and
-  Vietnamese with a live preview, and publish a scheduled system-announcement banner
-  (Information / Warning / Critical / Resolved, dismissible or not) to every signed-in
-  user.
-- **English & Vietnamese UI** — a top-bar language switch translates the whole
-  interface instantly, no reload; the choice is remembered per browser.
-- **Admin backup & restore** — scheduled, resumable WikiHub backups with password
-  hash handling called out explicitly, plus safety checks against uploading the
-  wrong archive type. A backup carries access and discussion in full: space and
-  page permissions (allow-lists, blocks, Open/Restricted and inheritance
-  switches), groups with every owner, per-user global-permission overrides, and
-  all comments, replies and likes.
-- **AI assistant (optional, bring your own endpoint)** — connect any
-  OpenAI-compatible chat service under **Administration → AI assistant**. WikiHub
-  never runs a model itself: every action is an on-demand request to your
-  endpoint, answers are cached, and each person has an hourly limit, so a small
-  server stays light. Until an endpoint is active, every AI control explains that
-  it is not set up. What it does:
-  - **TL;DR** — a toolbar button gives a short Markdown summary of the page,
-    in the page's own language or switched to English / Tiếng Việt (a switch
-    translates the saved summary instead of re-reading the page). File names and
-    links in it are clickable, and attachments open in the viewer on top.
-  - **Create page with AI** — in *Create page*, describe the page and the AI
-    searches the wiki for related pages you can read, asks a few multiple-choice
-    questions (with an info tip per option) to pin down what you want, then drafts
-    the whole page in WikiHub's own format (headings, lists, checklists, tables,
-    code) with an *AI-written* notice at the top. Review it in a side-by-side
-    preview, enlarge it, regenerate or discard — nothing is saved until you
-    create the page.
-  - **Explain or translate a selection** — select words in a page and a small AI
-    button appears at the end of the selection; it explains them in context
-    (Vietnamese by default) or translates them, in English or Tiếng Việt.
-  - **AI in the editor** — on an empty line press `Ctrl`+`Space` (the editor
-    hints at it, like Notion) and describe what you want; the AI writes it,
-    shows it formatted, and *Insert below* adds it, or *Edit* asks for changes.
-    Select text for a small AI button to rewrite it as instructed, fix grammar,
-    finish a sentence, or make terminology consistent with the related pages
-    already in the wiki. Every answer is a suggestion that is never applied if the
-    text changed meanwhile, and every version of a request is kept so it can be
-    stepped back to.
-  - **Labels and related pages** — from a page's labels dialog, *Suggest labels and
-    related pages* proposes labels (preferring ones you already use) and existing
-    pages on the same topic, one click to add or open, remembered until the page
-    changes.
-  - **Ask AI from search** — type a question in the search box and click *Ask AI*
-    (or `Ctrl`+`Enter`): a short answer written only from pages you can open, every
-    statement carrying a numbered mark that opens its source page, with the pages read
-    listed under it (folded *Also read* ones are never mistaken for sources). Lists come
-    back as tables; passwords, tokens and keys are replaced with `[hidden]`; an answer
-    that cannot be tied to a page is never shown. *Continue in chat* carries it on.
-  - **Chat with the assistant** — a sparkle button in the top bar opens a panel for a
-    multi-turn conversation: replies stream in word by word and cite wiki pages, earlier
-    messages count as context for follow-ups (and the assistant asks when a city or a
-    version is missing). The panel can be dragged wider or narrower, expanded, and put
-    away by clicking outside; the conversation is kept only in your browser. Questions can
-    be copied or edited, and an edited question keeps its earlier versions to switch back
-    to (`‹ 1 / 2 ›`), each with what followed it. Select any words to explain or translate
-    them, as on a page.
-  - **Files, tests and long questions in the chat** — a question can be up to 4,000
-    characters (a counter shows near the end), and pasting more than the box takes attaches
-    the words as a text file instead. The paper clip (or dropping files anywhere on the panel,
-    which shows a drop area, or pasting a file) attaches up to 3 files a conversation — Word,
-    PDF, Excel, CSV, HTML, Markdown or text, 20 MB each. Only their words are kept, for the person
-    alone and for a day after the last question, never in the wiki. The files show on the
-    question they were sent with, every later question reads them too, and the answer looks in
-    them **first**, using the wiki to complete or check them; they are cited `[f1]`, `[f2]`, a
-    mark opening what was read. A long file gives its opening and the paragraphs or table rows
-    (one line per row, a merged cell repeated on every row it covers) that match the question.
-    A test pasted whole, or attached, with numbered questions (*Câu hỏi 1*, *Question 2*…) is
-    searched and answered question by question, in order, with the right option of each
-    multiple-choice question.
-  - **Counting and listing over a table** — *how many criteria is BinhNT responsible for?*
-    over a table of 85 rows reads every row naming what was asked and the number found, not a
-    stretch of the table. A name is found however it is written (BinhNT, BìnhNT, Binh NT, Bình NT
-    are one), preferring a name in short cells (an owner column) to a rarer word of prose.
-  - **Related pages and a page map** — WikiHub works out which pages belong together from
-    links, names and similar content, lists them under each page, shows them on a map of the
-    space, and the assistant reads a found page's neighbours too.
-  - **Content health** — space Owners and Admins open a report of pages that may be out of
-    date (not edited while pages tied to them were, with *Check with AI* and *Still correct*),
-    broken links, orphan pages and duplicates: the four checks on the left with their counts
-    and a total, the chosen list on the right in a window of one size.
-  - **Unanswered questions** — what the chat and the search box could not answer from the
-    pages, or whose answer was marked *Not helpful*, grouped by question with who asked and the
-    pages that came close; *Mark answered* with a page notifies everyone who asked.
-  - **A chat that knows you and WikiHub** — *which spaces can I open?*, *what is my role in
-    OPS?*, *how do I change my password?*, *can it back up on a schedule?* are answered from
-    your own spaces, roles and permissions (read on the server, only yours) and from the
-    in-app Help page itself, with buttons under the answer that open the page needed
-    (Administration pages only for people who may open them). Help is copied for the
-    assistant by `scripts/build_help_knowledge.py` into `backend/app/assets/help_{en,vi}.json`:
-    run it after editing Help (a test fails when the copy is stale).
-  - **A Help centre that answers** — `/help` searches the guides as you type (both
-    languages, accents optional) and, asked a whole question, has the assistant answer from
-    the guides alone (`POST /api/v1/ai/help`, no model call when no guide is about it),
-    naming the guides to open; topics list their guides, and each guide has its own page with
-    a navigation of every topic and *Previous* / *Next*.
-  - **A chat that does things, once you confirm** — *create a space abc and write a Prometheus
-    guide in it* shows a plan (create a space, write a page drafted by AI, add someone to a
-    space with a role, star a space) with *Confirm and run* / *Cancel*. Nothing changes before
-    that; it runs through the same services as WikiHub's own pages with your permissions, each
-    step re-checked, stops at the first that fails, and every finished step has an *Open* link.
-  - **Reading and typing in the chat** — a *Detail* switch under the box (Brief / Balanced /
-    Detailed) sets how long and thorough answers are; `↑` / `↓` bring back the questions
-    asked before, as in a terminal; *Answer again* keeps the earlier answer as a version;
-    *Stop* keeps the question with what was written and a *cancelled* note (and *Try again*);
-    the panel stays open when you go to another page. The conversation is kept only in your
-    browser, for your account, and is wiped when you sign out or when an administrator starts or
-    stops viewing as someone else (and, if a session ended any other way, the next chat that opens
-    removes what another person left). Answers are laid out to be scanned: a
-    bold first sentence, numbered steps, tables, `code`, italics, quotes, coloured Tip /
-    Warning / Important / Note callouts and a single highlighter mark.
-  - **Web search for the chat (optional, off by default)** — under *AI assistant → Web
-    search* an administrator lets the chat look up public, technical questions on the
-    internet through the AI gateway's own search or Tavily / Brave / Serper (with a key).
-    Only a short query leaves WikiHub, stripped of addresses, e-mails, internal host names
-    and passwords; questions about your own systems, accounts and people are answered from
-    the wiki only. Answers say what they stand on — wiki pages `[1]`, web pages `[w1]`
-    (opened in a new tab) or the model's own knowledge, always marked as unchecked. The
-    text of the top pages is read (public addresses only, bounded in time and size), and
-    the weather of a named place comes from real measurements (Open-Meteo, only the place
-    name is sent). Where to look is decided *before* an answer is written: the person saying
-    "on the internet" or a question about now or the news (today, a date, prices, weather)
-    goes to the web first, a question the wiki clearly holds is answered from it, and for the
-    rest a small model call (temperature 0, remembered for ten minutes per question, so the
-    same question goes the same way) picks wiki, web, weather or a question back; a reply that
-    still came to nothing gets a second look. When the configured search finds nothing, or
-    pages about something else (the free engine behind a gateway does, now and then), free
-    sources that need no key are tried — Bing and DuckDuckGo pages, Google News headlines,
-    Wikipedia — with the same short query; a paid service (Tavily, Brave, Serper) is still the
-    more dependable choice.
-  - **Hybrid and semantic search** — keyword search is ranked by how telling each word is
-    (accents ignored, typos in titles tolerated, IP addresses found), and with an
-    embedding model chosen under *AI assistant → Semantic search* it also finds pages by
-    meaning and fuses both rankings. The embedding source can be the active connection,
-    another OpenAI-compatible endpoint, or a **self-hosted Ollama** that an administrator
-    enables and disables from the UI (a card shows install progress, memory and CPU; models
-    are downloaded and chosen in one dropdown; memory, cores and keep-alive are tunable).
-    Ollama is controlled by a tiny sidecar that alone holds the Docker socket and does
-    only five fixed things; an unused Ollama costs no memory. The words inside files attached
-    to pages (Word, Excel, PDF, HTML…) are read and indexed with their page, so search finds
-    them and the assistant answers from them — or, with *Ask about this file*, from one file
-    alone.
-  - **Not set up yet?** Every AI control stays visible and explains what is missing:
-    an administrator gets the three steps and a link to the settings, everyone else
-    is told to ask an administrator (the settings link is never shown to them).
-  - **Key and skill management** — keep several connections (keys stored
-    encrypted, shown masked, left out of backups) with exactly one active; check
-    a connection and pick a model from what it offers; and edit the instructions
-    behind each feature as *skills* (summary, create page, explain, translate, writing assistant, labels and related pages)
-    with one-click reset to the built-in wording. *Semantic search* and *Web search* have
-    their own tabs, and *Usage limits* set how many AI calls one person may make an hour
-    (and, separately, document translation calls).
-  - **Server monitor** — *Administration → Server* shows the machine's load, memory,
-    swap, disk and uptime and WikiHub's own Docker containers (never other services on the
-    host) with uptime, CPU, memory and health, sortable by header, plus their last log lines
-    with credentials hidden. Read-only: nothing there can stop or change anything.
-- **Statistics** — *Administration → Statistics* shows, for 7, 30 or 90 days, users, people
-  active, edits, page views and AI token use, people active per day and how long one spends
-  using WikiHub (only while a visible tab is read, typed in or clicked), and the most viewed,
-  starred and saved pages and spaces.
-- **Issue tracker** — anyone reports a problem (with screenshots and labels);
-  issue managers claim, assign, note and close it, one at a time or in bulk.
-  **Export Word** turns one issue, or every ticked issue in one file with a
-  summary table, into a themed `.docx` to hand to whoever will fix it — internal
-  notes are never included.
-
-## 🏗️ Architecture
-
-```
-Browser
-   │
-   ▼
-Next.js 16 (App Router)          ── React Server Components for reads,
-   │                                client components for the editor
-   │  REST /api/v1
-   ▼
-FastAPI modular monolith         ── Router → Service → Repository → DB
-   │
-   ├──▶ PostgreSQL 16   application data + full-text search
-   ├──▶ Redis 7         job queue, rate limits, short-lived cache
-   └──▶ S3 / MinIO      attachments and export packages
-              ▲
-   arq worker ┘         same image, different entrypoint
-```
-
-Business logic lives in **services**, never in route handlers. SQLAlchemy models
-never cross the API boundary — every response is a Pydantic schema.
-
-Detailed design: [`docs/architecture.md`](docs/architecture.md). Search, the knowledge graph and the AI
-assistant's retrieval: [`docs/knowledge-graph-and-rag.md`](docs/knowledge-graph-and-rag.md).
-
-## 🧰 Tech Stack
-
-| Layer | Choice |
-|---|---|
-| Backend | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic |
-| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, Tiptap 3 |
-| Data | PostgreSQL 16, Redis 7 |
-| Objects | S3-compatible (MinIO locally, AWS S3 or equivalent in production) |
-| Jobs | arq (asyncio Redis queue) |
-| Auth | Local email/password (Argon2id + JWT); OIDC behind an interface |
-| Search | PostgreSQL full-text search behind a swappable backend interface |
-| Deploy | Docker Compose (`./scripts/run.sh`); Kubernetes/Helm not written yet |
-
-## 🛠️ Getting Started
-
-### 📌 Prerequisites
-
-- Docker 24+ and Docker Compose v2
-- For running outside containers: Python 3.12+ and Node.js 20+
-
-### 🔑 Quick Start (Docker)
+Requires **Docker 24+** and **Docker Compose v2**.
 
 ```bash
-./scripts/run.sh --dev   # day-to-day development — hot reload
-./scripts/run.sh         # production-like run — built images, no reload
+./scripts/run.sh --dev   # development with hot reload
+./scripts/run.sh         # production-like build
 ```
 
-`scripts/run.sh` is the one-command way to stand up the whole stack: it creates
-`.env` from `.env.example` on first run (an existing `.env` is never
-overwritten), resolves host-port conflicts automatically, builds and starts
-every service, waits for each one to report healthy (dumping its last 40 log
-lines instead of hanging if it doesn't), applies Alembic migrations, seeds the
-protected bootstrap admin account, and prints the URLs below. It's idempotent —
-running it again only reconciles what has drifted.
+Run `./scripts/run.sh --help` for all flags (`--fresh`, `--rebuild`, `--no-build`, `--logs`, `--stop`).
 
-| Flag | Effect |
-|---|---|
-| `--dev` | Hot reload: mounts `backend/`/`frontend/` and runs `uvicorn --reload`, `arq --watch`, `next dev` |
-| `--fresh` | `docker compose down -v` and wipes bind-mounted data — **destroys the database, Redis, attachments and automated backups** |
-| `--rebuild` | Rebuild images from scratch (`--no-cache`) — needed after a dependency change |
-| `--no-build` | Skip building and reuse existing images — fastest way back up when nothing changed |
-| `--logs` | Tail logs once everything is healthy |
-| `--stop` | Stop the stack (volumes are kept) |
-| `--timeout <sec>` | How long to wait for health checks (default 240) |
-
-`./scripts/run.sh --help` prints the same reference, plus common workflows
-(first run, after adding a dependency, resetting a broken database, ...).
-
-#### 🧩 The three compose files
-
-Prefer to drive Docker Compose yourself? Start with `cp .env.example .env`
-(every file below reads the same `.env`), then pick one — you just lose the
-health-wait, automatic port resolution, and auto-seeding that `run.sh` gives
-you for free.
-
-| File | Use it for | Where images come from | Source code |
-|---|---|---|---|
-| [`docker-compose.yml`](docker-compose.yml) | Production-like run on the machine that holds the repo (what plain `./scripts/run.sh` uses) | Built locally from `deploy/docker/` | `./backend` is bind-mounted over the image, so it needs the checkout |
-| [`docker-compose.dev.yml`](docker-compose.dev.yml) | Day-to-day development with hot reload (what `./scripts/run.sh --dev` uses) | Built locally, frontend uses the `dev` stage | `backend/` and `frontend/` bind-mounted; edits apply without a rebuild |
-| [`docker-compose.release.yml`](docker-compose.release.yml) | Any other server: pull and run | Pulled from GHCR, built by CI ([details](#prebuilt-images-no-build-on-the-server)) | None — copy only this file and `.env` |
-
-`docker-compose.dev.yml` is an **overlay**: it only overrides the base file, so
-it is never used alone — and it is deliberately not named
-`docker-compose.override.yml`, which Compose would auto-load and silently turn
-every plain `docker compose up` into a development run. `release` is
-**standalone**: never combine it with the other two.
-
-```bash
-# docker-compose.yml — production-like, built from source
-docker compose up -d --build
-docker compose down                      # stop (add -v to also drop volumes)
-
-# docker-compose.yml + docker-compose.dev.yml — development, hot reload
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down
-
-# docker-compose.release.yml — prebuilt images, e.g. on a server
-docker compose -f docker-compose.release.yml pull
-docker compose -f docker-compose.release.yml up -d
-docker compose -f docker-compose.release.yml down
-```
-
-All three share the project name `wikihub` and the same data directory
-(`WIKIHUB_DATA_HOST_DIRECTORY`), so they are alternatives, not side-by-side
-stacks: running `up` with a different file recreates the affected services in
-place (as `run.sh` does when you switch `--dev` on or off), and your data
-survives the switch. Use the same `-f` files for `down` as you did for `up`.
-
-| Service | URL |
+| Service | Default URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| API docs (Swagger) | http://localhost:8000/docs |
-| API docs (ReDoc) | http://localhost:8000/redoc |
+| API docs (Swagger / ReDoc) | http://localhost:8000/docs · `/redoc` |
 | Health / readiness | http://localhost:8000/health · `/ready` |
 | MinIO console | http://localhost:9001 |
 
-### 🚦 Port Conflicts
+### Deploy with prebuilt images
 
-`./scripts/run.sh` resolves host-port conflicts on its own, reusing whatever
-port it already picked on a restart. Running Docker Compose directly instead,
-if something already owns 3000/5432/6379/8000/9000 on your machine, change the
-`*_PORT_HOST` values in `.env`. Only the host-side mapping moves; containers keep
-talking to each other on standard ports. Browser API requests use the current
-WikiHub origin and are proxied by Next.js, so this also works when the frontend
-is opened through a reverse proxy or an ngrok URL. `API_INTERNAL_BASE_URL` is
-the only URL used for server-side requests inside Docker.
-
-### ⚙️ Local Development (without Docker)
-
-Run the infrastructure in Docker and the app on your machine for fast reloads:
+Prebuilt `linux/amd64` images are published to GHCR on every push to `master` (`ghcr.io/quanblue/wiki-hub-backend` and `ghcr.io/quanblue/wiki-hub-frontend`). On a server without the source tree, copy [`docker-compose.release.yml`](docker-compose.release.yml) and `.env` (from [`.env.example`](.env.example)), set your secrets, `WIKIHUB_ENV=production`, `WIKIHUB_CORS_ORIGINS`, and `NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL`, then run:
 
 ```bash
-make deps              # postgres + redis + minio only
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+```
+
+## Development
+
+To run the app outside Docker (requires Python 3.12+ and Node.js 20+):
+
+```bash
+make deps              # postgres + redis + minio in Docker
 make install           # backend virtualenv
 make install-frontend  # npm install
 
@@ -537,230 +121,66 @@ make dev-worker        # background job worker
 make dev-frontend      # http://localhost:3000
 ```
 
-Run `make help` to see every target.
-
-## 🧬 Database Migrations
-
-Schema is owned entirely by Alembic — tables are never created by hand, and a
-fresh database is built purely from migrations.
+### Migrations & tests
 
 ```bash
-make migrate                        # apply all migrations (in Docker)
-make migrate-local                  # apply from the host virtualenv
+make migrate                        # apply Alembic migrations (Docker)
 make migration m="add page labels"  # autogenerate a new revision
-make downgrade                      # roll back one revision
-make seed                           # bootstrap admin user + demo content
+make seed                           # bootstrap admin + demo content
+
+./scripts/test.sh                   # full test suite + coverage
+./scripts/test.sh --unit            # fast unit tests (no DB required)
+make check                          # lint, typecheck, and tests
+make e2e                            # Playwright end-to-end tests
 ```
 
-## 🧪 Tests
+## Tech Stack
 
-```bash
-./scripts/test.sh    # every suite + coverage summary  (also: make test-all)
-./scripts/test.sh --unit    # fast pass, no database needed
-./scripts/test.sh --open    # coverage + open the HTML reports
-```
-
-`./scripts/test.sh --help` lists the rest (`--backend`, `--frontend`,
-`--watch`, `--fail-under N`, `-k EXPR`). Individual gates:
-
-```bash
-make test            # backend: pytest
-make test-frontend   # frontend: vitest
-make e2e             # end-to-end: Playwright
-make lint            # ruff + eslint + prettier
-make typecheck       # mypy + tsc
-make check           # everything above
-```
-
-Tests marked `integration` need PostgreSQL, Redis and MinIO; start them with
-`make deps`. `scripts/test.sh` then wires them up automatically against a
-separate `wikihub_test` database, so test rows never reach your development
-data. Without a database those tests skip themselves and coverage drops from
-~81% to ~64% — the script warns when that happens, so the number is never
-quietly wrong.
-
-## 📥 Importing from Confluence
-
-WikiHub imports Confluence space exports and detects the format automatically:
-
-- **XML space export** (`entities.xml` + `attachments/`) — richest fidelity:
-  page IDs, hierarchy, labels, authors and timestamps.
-- **HTML export** (`index.html` + per-page HTML) — hierarchy is recovered from
-  breadcrumbs; metadata that the format does not carry is reported as missing.
-
-Imports run as background jobs with live progress and produce a downloadable
-report listing every unsupported macro and failed attachment. Nothing is
-discarded silently — unrecognised macros become visible callouts in the page.
-
-A dedicated `docs/import-confluence.md` guide is not written yet — see the
-in-app **Help** center for day-to-day usage.
-
-## 📤 Exporting
-
-Export a single page, a page subtree, a whole Space or the entire instance to
-**Markdown** or **HTML**, packaged as a ZIP with assets and rewritten relative
-links so the archive works offline. A single page also exports to **PDF**,
-**HTML** or **Word** (`.docx`, with a native, updatable table of contents when
-the page has one).
-
-Issues export to **Word** too, from the issue window or for every issue ticked in
-the list at once: a report in WikiHub's own palette with the status and labels,
-a details table, the description, embedded screenshots and the notes shared with
-the reporter.
-
-A dedicated `docs/export.md` guide is not written yet — see the in-app
-**Help** center for day-to-day usage.
-
-## 🚢 Deployment
-
-Production Dockerfiles live in [`deploy/docker/`](deploy/docker) and run as a
-non-root user with the Python packaging toolchain stripped out of the runtime
-image. Kubernetes manifests and a Helm chart are on the roadmap but not
-written yet — see [Roadmap](#-roadmap).
-
-A dedicated `docs/deployment.md` guide is not written yet either; until then,
-`./scripts/run.sh` (see [Getting Started](#-getting-started)) is the
-supported way to run WikiHub on the machine that holds the source.
-
-### Prebuilt images (no build on the server)
-
-Every push to `master` runs
-[`.github/workflows/release-images.yml`](.github/workflows/release-images.yml),
-which builds the backend and frontend images and publishes them to GitHub
-Container Registry as `ghcr.io/quanblue/wiki-hub-backend` and
-`ghcr.io/quanblue/wiki-hub-frontend`, tagged `latest` and `sha-<commit>`
-(pushing a `vX.Y.Z` tag also publishes `X.Y.Z` and `X.Y`). The images are
-`linux/amd64` only.
-
-On any other server, copy just
-[`docker-compose.release.yml`](docker-compose.release.yml) and a `.env` (from
-[`.env.example`](.env.example)) — no source checkout. The other two compose
-files are described under [The three compose files](#-the-three-compose-files);
-`docker-compose.yml` is not suitable here because it needs the source tree:
-
-```bash
-docker compose -f docker-compose.release.yml pull
-docker compose -f docker-compose.release.yml up -d
-```
-
-Repeat the same two commands to update. In `.env`, set
-`NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL` to the address your *browser* uses
-for the Document Server (e.g. `http://203.0.113.10:8080`), `WIKIHUB_CORS_ORIGINS`
-to the address people open WikiHub at, `WIKIHUB_ENV=production`, and real
-secrets. `WIKIHUB_IMAGE_TAG` pins a version (`sha-<commit>` or `1.2.0`) instead
-of following `latest`.
-
-Packages published from a private repository are private: either run
-`docker login ghcr.io` on the server with a token that has `read:packages`, or
-make the two packages public under the repository's *Packages* settings.
-
-## 🔒 Security
-
-- Secrets come from environment variables only; nothing sensitive is committed.
-- Passwords hashed with Argon2id; short-lived JWT access tokens plus rotating
-  refresh tokens.
-- Optional **two-factor authentication (TOTP)** with offline QR code setup,
-  6-box auto-verifying OTP input, 10 one-time recovery codes (mandatory `.txt`
-  download), zero-lockout **New QR code** rotation, administrator enforcement
-  policy (*Off* / *Admins only* / *Everyone*, with the protected bootstrap
-  administrator always exempt), and audited administrator 2FA resets.
-- Uploads validated by extension, MIME type **and** magic bytes, with a size cap
-  and generated object keys — the original filename is never trusted.
-- Structured logs pass through a redaction filter, so passwords, tokens, keys
-  and cookies never reach a log sink.
-- Security headers and a strict CSP on every API response.
-- AI features send only what an action needs (the page text, the selected words or the
-  conversation) to the endpoint an administrator connected, only for pages the person can
-  already read. Web search is off until an administrator turns it on, sends only a
-  sanitised query, and reads pages only from public addresses (every redirect re-checked). API keys are stored encrypted, shown masked and excluded from
-  backups; page text and file names are treated as data, never as instructions
-  to the model, and AI-drafted HTML goes through the same sanitiser as imports.
-
-### 🕵️ Account Switching (Impersonation)
-
-Administrators can view WikiHub as another user from the account menu, without
-knowing that user's password. The rules:
-
-- **Administrators only**, and never the protected bootstrap account — that one
-  is the guaranteed way back into the instance.
-- Deactivated accounts cannot be impersonated, and impersonation cannot be
-  nested.
-- The administrator's identity travels in the signed token's `act` claim, so it
-  cannot be stripped without invalidating the signature.
-- Starting and stopping are both audited, and **every action taken meanwhile
-  records the administrator behind it** (`impersonator_username` in
-  `audit_logs`, shown as a `via <admin>` badge in the audit log). Without that
-  column the trail would read "alice deleted the space" when an administrator
-  did it as alice.
-- A non-dismissible banner stays on screen for the whole session.
-
-## 🗺️ Roadmap
-
-The original phase-by-phase build-out is done in substance: the data model and
-migrations, Spaces/Pages/Revisions, authentication & RBAC, the Tiptap editor,
-attachments, full-text search, the Confluence import/export framework,
-background jobs, and the admin UI/security hardening described throughout
-this README are all shipped and in daily use — not just planned.
-
-What's genuinely still open:
-
-| Item | Status |
+| Layer | Technology |
 |---|---|
-| In-app audit log viewer | **Done** — browseable under **Administration → Audit logs** |
-| E-mail notifications & Admin Mail | **Done** — outbound SMTP, user request inbox, broadcast & delivery logs under **Administration → Mail** |
-| Two-factor authentication (TOTP 2FA) | **Done** — offline QR setup, 10 one-time recovery codes, enforcement policy (`off` / `admins` / `all`), and admin reset |
-| Page templates | **Done** — 18 built-in EN/VI templates, Global & per-space templates, *Save as template*, and backup/restore |
-| CI pipeline | Not set up — `make check` runs everything a CI job would, just not automatically on push |
-| Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
-| `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
-| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions, cited Q&A in search, a multi-turn chat (with optional web search, weather and page reading), hybrid and semantic search with an optional self-hosted Ollama, a knowledge graph of related pages, a per-space content health report (stale pages with an AI check, broken links, orphans, duplicates) and the unanswered questions the wiki is missing | Done |
+| Backend | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) · Alembic · structlog |
+| Frontend | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Radix UI · TanStack Query |
+| Editor & Docs | Tiptap 3 · CodeMirror 6 · Mermaid · ONLYOFFICE Document Server · Pandoc · PyMuPDF · openpyxl · python-docx |
+| Data & Storage | PostgreSQL 16 (full-text search) · Redis 7 · arq (async jobs) · MinIO / S3 |
+| Auth & Security | Argon2id · JWT (rotating refresh tokens) · TOTP 2FA · `nh3` HTML sanitizer |
+| AI (optional) | Any OpenAI-compatible chat & embedding endpoint · self-hosted Ollama |
+| Testing & Deploy | pytest · Vitest · Playwright · Ruff · mypy · ESLint · Docker Compose |
 
-## 📚 Documentation
+## Documentation
 
 | Document | Contents |
 |---|---|
-| [`docs/demo/`](docs/demo) | Full feature tour with screenshots and demo GIFs |
+| [`docs/demo/`](docs/demo) | Full feature tour with screenshots and GIFs |
 | [`docs/architecture.md`](docs/architecture.md) | System design and module layout |
+| [`docs/knowledge-graph-and-rag.md`](docs/knowledge-graph-and-rag.md) | Search, knowledge graph, and AI retrieval |
 | [`docs/development.md`](docs/development.md) | Day-to-day workflow and conventions |
 | [`docs/design-system.md`](docs/design-system.md) | Visual language and layout tokens |
-| [`docs/user-guide.md`](docs/user-guide.md) | Hướng dẫn sử dụng WikiHub bằng tiếng Việt |
-| [`docs/licensing.md`](docs/licensing.md) | Third-party license obligations (e.g. PyMuPDF/AGPL, the Apache-2.0 tldr-skill style the TL;DR skill is adapted from) |
+| [`docs/user-guide.md`](docs/user-guide.md) | Hướng dẫn sử dụng WikiHub (Tiếng Việt) |
+| [`docs/licensing.md`](docs/licensing.md) | Third-party license obligations |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
 
-`database.md`, `api.md`, `authentication.md`, `permissions.md`,
-`import-confluence.md`, `export.md` and `deployment.md` are not written yet —
-see [Roadmap](#-roadmap).
+## License
 
-## ✨ Credits
+WikiHub is free software under the [Apache-2.0 License](LICENSE).
 
-This software is built on the following open source projects:
+WikiHub is an independent project and is not affiliated with, endorsed by, sponsored by, or derived from Atlassian or Notion Labs, Inc. "Confluence" and "Notion" are trademarks of their respective owners and are used strictly for comparative and interoperability purposes.
 
-- [FastAPI](https://fastapi.tiangolo.com/) & [Pydantic](https://docs.pydantic.dev/) — backend API framework
-- [SQLAlchemy](https://www.sqlalchemy.org/) & [Alembic](https://alembic.sqlalchemy.org/) — ORM and migrations
-- [Next.js](https://nextjs.org/) & [React](https://react.dev/) — frontend framework
-- [Tiptap](https://tiptap.dev/) — rich-text editor
-- [Tailwind CSS](https://tailwindcss.com/) — styling
-- [PostgreSQL](https://www.postgresql.org/) & [Redis](https://redis.io/) — data and jobs
-- [arq](https://arq-docs.helpmanual.io/) — async job queue
-- [MinIO](https://min.io/) — S3-compatible object storage
-- [ONLYOFFICE](https://www.onlyoffice.com/) — in-browser Office document editing
-- [Playwright](https://playwright.dev/) — end-to-end testing
+If WikiHub saves your team time, a ⭐ on GitHub helps a lot!
 
-## 📜 License
+## Star History
 
-[`Apache-2.0`](LICENSE).
-
-WikiHub is an independent project and is not affiliated with, endorsed by,
-sponsored by, or derived from Atlassian or Notion Labs, Inc. It contains no
-third-party branding or proprietary assets. "Confluence" and "Notion" are
-trademarks of their respective owners and are used here strictly for
-comparative and interoperability purposes (such as naming supported import and
-export formats).
+<a href="https://www.star-history.com/?repos=QuanBlue%2Fwiki-hub&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=QuanBlue/wiki-hub&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=QuanBlue/wiki-hub&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=QuanBlue/wiki-hub&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ---
 
 <div align="center">
 
-GitHub [@QuanBlue](https://github.com/QuanBlue) · Gmail [quannguyenthanh558@gmail.com](mailto:quannguyenthanh558@gmail.com)
+GitHub [@QuanBlue](https://github.com/QuanBlue) · Email [quannguyenthanh558@gmail.com](mailto:quannguyenthanh558@gmail.com)
 
 </div>

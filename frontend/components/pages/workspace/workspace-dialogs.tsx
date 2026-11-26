@@ -6,6 +6,7 @@ import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
+import { PagePresentationModal } from "@/components/pages/page-presentation-modal";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
 import { PublicShareDialog } from "@/components/pages/public-share-dialog";
@@ -18,6 +19,7 @@ import { SpaceTemplatesDialog } from "@/components/pages/space-templates-dialog"
 import { SpaceTrashDialog } from "@/components/pages/space-trash";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useTranslation } from "@/lib/i18n/context";
+import { formatDate } from "@/lib/i18n/format";
 import type {
   Group,
   PageLabel,
@@ -63,6 +65,9 @@ export type WorkspaceDialogsProps = {
   setMovePageOpen: (open: boolean) => void;
   pageAccessOpen: boolean;
   setPageAccessOpen: (open: boolean) => void;
+  presentOpen: boolean;
+  setPresentOpen: (open: boolean) => void;
+  pageLabels: PageLabel[];
   summaryOpen: boolean;
   setSummaryOpen: (open: boolean) => void;
   shareDialogOpen: boolean;
@@ -137,6 +142,9 @@ export function WorkspaceDialogs({
   setMovePageOpen,
   pageAccessOpen,
   setPageAccessOpen,
+  presentOpen,
+  setPresentOpen,
+  pageLabels,
   summaryOpen,
   setSummaryOpen,
   shareDialogOpen,
@@ -175,7 +183,7 @@ export function WorkspaceDialogs({
   deletePagePending,
   onDeletePage,
 }: WorkspaceDialogsProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   return (
     <>
@@ -282,6 +290,47 @@ export function WorkspaceDialogs({
           onOpenChange={setPageAccessOpen}
         />
       ) : null}
+
+      {currentPage ? (
+        <PagePresentationModal
+          key={`present-${space.key}/${currentPage.slug}`}
+          open={presentOpen}
+          onOpenChange={setPresentOpen}
+          title={currentPage.title}
+          content={currentPage.content}
+          contentFormat={currentPage.content_format}
+          spaceName={space.name}
+          spaceKey={space.key}
+          pageSlug={currentPage.slug}
+          author={currentPage.created_by_username}
+          updatedBy={currentPage.updated_by_username}
+          updatedAtFormatted={
+            currentPage.updated_at
+              ? formatDate(currentPage.updated_at, locale)
+              : null
+          }
+          labels={pageLabels.map((l) => l.name)}
+          allowAiDeck={true}
+        />
+      ) : (
+        <PagePresentationModal
+          key={`present-space-${space.key}`}
+          open={presentOpen}
+          onOpenChange={setPresentOpen}
+          title={space.name}
+          content={space.description}
+          contentFormat="html"
+          spaceName={space.name}
+          spaceKey={space.key}
+          pageSlug={null}
+          author={space.created_by_username}
+          updatedAtFormatted={
+            space.updated_at ? formatDate(space.updated_at, locale) : null
+          }
+          labels={[]}
+          allowAiDeck={false}
+        />
+      )}
 
       {currentPage ? (
         <PageSummaryDialog

@@ -351,6 +351,27 @@ describe("attachment icons and legacy markup", () => {
     ).toBeInTheDocument();
   });
 
+  it("sets a download attribute on inlined data: attachment tiles in read-only mode", async () => {
+    render(
+      <RichTextContent
+        exportMode
+        content={
+          '<p><a href="data:application/pdf;base64,JVBERi0=" data-attachment="card.pdf" data-display-mode="card">card.pdf</a>' +
+          '<a href="data:text/plain;base64,aGVsbG8=" data-attachment="link.txt" data-display-mode="link">link.txt</a></p>'
+        }
+      />,
+    );
+
+    expect(await screen.findByRole("link", { name: "card.pdf" })).toHaveAttribute(
+      "download",
+      "card.pdf",
+    );
+    expect(screen.getByRole("link", { name: "link.txt" })).toHaveAttribute(
+      "download",
+      "link.txt",
+    );
+  });
+
   it("renders attachment captions via data-caption and keeps caret spacing padding on cards", async () => {
     const { container } = render(
       <RichTextContent

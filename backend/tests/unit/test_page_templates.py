@@ -274,6 +274,15 @@ def test_builtin_templates_en_and_vi_complete_and_sanitized() -> None:
         # Built-in HTML must be safe and survive sanitization without dropping headings.
         assert "<h2>" in sanitize_imported_html(en_tpl.content)
         assert "<h2>" in sanitize_imported_html(vi_tpl.content)
+        if "<table" in en_tpl.content:
+            assert (
+                '<th style="background-color: var(--primary-subtle)"><strong>'
+                in en_tpl.content
+            )
+            assert (
+                '<th style="background-color: var(--primary-subtle)"><strong>'
+                in vi_tpl.content
+            )
 
 
 def test_builtin_lookup_helpers() -> None:

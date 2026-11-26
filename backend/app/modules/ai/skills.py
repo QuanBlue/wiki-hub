@@ -582,6 +582,25 @@ def summary_system_prompt(instructions: str, lang: str | None = None) -> str:
     return f"{instructions}\n\n{rules}\n\n{SAFETY_RULES}"
 
 
+SLIDE_DECK_RULES = (
+    "Condense the wiki page into an executive presentation slide deck of 4 to 8 slides. "
+    "Reply with valid JSON only, no markdown fences and no surrounding commentary, in this exact shape:\n"
+    '{"slides":[{"title":"Short slide heading","subtitle":"Optional 1-line takeaway",'
+    '"bullets":["Concrete point with **bold** on key terms","Second point"],'
+    '"callout":"Optional key metric, warning or quote","speaker_notes":"1-2 sentences for the presenter to say aloud",'
+    '"layout":"bullets"}]}\n'
+    "Rules:\n"
+    "- Each slide must have a punchy title (at most 10 words) and 2 to 5 concise bullets (1 short sentence each).\n"
+    '- Set layout to "section" for a major transition slide, "highlight" when a critical decision/metric is featured in callout, or "bullets" for standard content.\n'
+    "- Keep exact commands, paths, numbers, owners and technical terms accurate from the page; never invent facts.\n"
+    "- Put helpful talking context in speaker_notes so the slide bullets stay scannable."
+)
+
+
+def slides_system_prompt(lang: str | None = None) -> str:
+    return f"{SLIDE_DECK_RULES}\n\n{language_rule(lang)}\n\n{SAFETY_RULES}"
+
+
 DIFF_SUMMARY_RULES_VI = """Bạn là chuyên gia phân tích và đánh giá tài liệu cho WikiHub.
 Nhiệm vụ của bạn là phân tích ý nghĩa nghiệp vụ/kỹ thuật và những thay đổi cốt lõi giữa hai phiên bản của trang wiki (hoặc tóm tắt nội dung khi tạo trang mới).
 Người dùng đã có công cụ so sánh trực quan từng ký tự thay đổi, vì vậy TUYỆT ĐỐI KHÔNG chép lại hay liệt kê từng từ/dòng thô. Hãy tập trung vào ý nghĩa, quy định và tác động.

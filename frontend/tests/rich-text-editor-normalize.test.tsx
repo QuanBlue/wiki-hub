@@ -14,6 +14,16 @@ describe("Confluence macros", () => {
       ),
     ).toContain('data-code="graph TD; A--&gt;B"');
   });
+
+  it("preserves the hidden mermaid-src fallback inside an already-normalized diagram node", () => {
+    const savedDiagram =
+      '<div data-type="diagram" data-engine="mermaid" data-look="handDrawn" data-code="graph TD; A--&gt;B">' +
+      '<pre class="mermaid-src hidden" style="display:none"><code class="language-mermaid">graph TD; A--&gt;B</code></pre>' +
+      "</div>";
+    const normalized = normalizeConfluenceCodeMacros(savedDiagram);
+    expect(normalized.match(/data-type="diagram"/g)).toHaveLength(1);
+    expect(normalized).toContain('data-look="handDrawn"');
+  });
   it("finds a view-file name from a plain filename attribute or a bare parameter", () => {
     expect(
       normalizeConfluenceCodeMacros(

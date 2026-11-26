@@ -18,6 +18,7 @@ import {
   MessageCircle,
   Mail,
   MessageSquareWarning,
+  Presentation,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -28,6 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { canPresentPath } from "@/lib/page-presentation";
 import { foldText } from "@/lib/search-highlight";
 import type { Me } from "@/types/api";
 
@@ -142,12 +144,30 @@ export function matchNavigation(
   user: Me | null | undefined,
   t: (key: string) => string,
   limit = 5,
+  pathname: string | null = null,
 ): NavigationMatch[] {
   const words = foldText(query).split(/\s+/).filter(Boolean);
   if (!user || words.length === 0) return [];
 
+  const entries: NavigationEntry[] = [
+    ...(canPresentPath(pathname)
+      ? [
+          {
+            id: "present",
+            href: "",
+            icon: Presentation,
+            access: "everyone" as const,
+            keywords:
+              "present presentation slides slideshow deck trinh chieu thuyet trinh slide",
+            command: "present",
+          },
+        ]
+      : []),
+    ...NAVIGATION_ENTRIES,
+  ];
+
   const scored: { match: NavigationMatch; score: number }[] = [];
-  for (const entry of NAVIGATION_ENTRIES) {
+  for (const entry of entries) {
     if (!canSeeEntry(entry, user)) continue;
     const label = t(`searchNav.${entry.id}`);
     const hint = t(`searchNav.${entry.id}Hint`);
@@ -188,10 +208,24 @@ export function matchCommands(
   aiOn: boolean,
   /** The space being looked at, if any: ":trash" opens its Trash. */
   spaceKey: string | null = null,
+  /** Current pathname: ":present" is offered when viewing a space, page, or shared doc. */
+  pathname: string | null = null,
 ): NavigationMatch[] {
   if (!user) return [];
   const all = [
     ...NAVIGATION_ENTRIES.map((entry) => ({ ...entry, command: COMMANDS[entry.id] })),
+    ...(canPresentPath(pathname) || spaceKey
+      ? [
+          {
+            id: "present",
+            href: "",
+            icon: Presentation,
+            access: "everyone" as const,
+            keywords: "present slides slideshow deck trinh chieu thuyet trinh slide",
+            command: "present",
+          },
+        ]
+      : []),
     ...(spaceKey
       ? [
           {

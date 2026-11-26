@@ -204,8 +204,8 @@ class Settings(BaseSettings):
     #: Attachments are inlined as data: URIs into the export snapshot. Caps
     #: keep one huge attachment (or many) from ballooning the export or
     #: stalling the render; anything over the cap becomes a plain link instead.
-    export_max_inline_asset_bytes: int = 8 * 1024 * 1024
-    export_max_inline_total_bytes: int = 40 * 1024 * 1024
+    export_max_inline_asset_bytes: int = 50 * 1024 * 1024
+    export_max_inline_total_bytes: int = 150 * 1024 * 1024
     pandoc_binary: str = "pandoc"
 
     # --- ONLYOFFICE document editing --------------------------------------

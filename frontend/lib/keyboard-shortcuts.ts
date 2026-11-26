@@ -142,6 +142,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     defaultBindings: ["Mod+Shift+C"],
   },
   {
+    id: "page.present",
+    label: "Present page as slides",
+    description: "Opens the current page in full-screen slide presentation mode.",
+    scope: "global",
+    group: "Navigation",
+    defaultBindings: ["Mod+Alt+P"],
+  },
+  {
     id: "help.open",
     label: "Open help documentation",
     description: "Opens the Help documentation page.",

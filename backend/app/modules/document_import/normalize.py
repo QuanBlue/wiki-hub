@@ -73,6 +73,7 @@ def normalize_document_html(
     _normalize_code_blocks(soup)
     _normalize_images(soup)
     _normalize_links(soup)
+    _normalize_highlights(soup)
     _normalize_tables(soup)
     _normalize_table_of_contents(soup)
     _unwrap_containers(soup)
@@ -480,13 +481,28 @@ def _demote_single_row_header(soup: BeautifulSoup, table: Tag) -> None:
     thead.decompose()
 
 
+def _normalize_highlights(soup: BeautifulSoup) -> None:
+    """Convert Pandoc ``<mark>`` highlights into Tiptap's ``TextStyleMark`` span."""
+    for mark in soup.find_all("mark"):
+        span = soup.new_tag(
+            "span",
+            attrs={
+                "data-wikihub-text-style": "",
+                "style": "background-color: #fef08a",
+            },
+        )
+        for child in list(mark.contents):
+            span.append(child.extract())
+        mark.replace_with(span)
+
+
 def _collapse_empty_paragraphs(soup: BeautifulSoup) -> None:
-    for paragraph in soup.find_all("p"):
-        if paragraph.get_text(strip=True):
+    for block in soup.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
+        if block.get_text(strip=True):
             continue
-        if paragraph.find(["img", "br", "table", "a"]):
+        if block.find(["img", "br", "table", "a"]):
             continue
-        paragraph.decompose()
+        block.decompose()
 
 
 # --------------------------------------------------------------------------

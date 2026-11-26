@@ -7,6 +7,7 @@ Markup uses clean semantic HTML compatible with WikiHub's Tiptap editor
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.modules.pages.tiptap_html import (
@@ -16,6 +17,16 @@ from app.modules.pages.tiptap_html import (
     TASK_LIST_CLASS,
 )
 from app.schemas.page_template import PageTemplateRead, TemplateLang
+
+_TH_PATTERN = re.compile(r"<th>(.*?)</th>")
+
+
+def _style_table_headers(html: str) -> str:
+    """Give built-in template table headers a subtle background tint and bold text."""
+    return _TH_PATTERN.sub(
+        r'<th style="background-color: var(--primary-subtle)"><strong>\1</strong></th>',
+        html,
+    )
 
 BUILTIN_PREFIX = "builtin:"
 BUILTIN_SLUGS: tuple[str, ...] = (
@@ -1155,7 +1166,7 @@ def _to_read(definition: _BuiltinTemplateDef, lang: TemplateLang) -> PageTemplat
         description=copy.description,
         category=definition.category,
         icon=definition.icon,
-        content=copy.content,
+        content=_style_table_headers(copy.content),
         content_format="html",
         created_by_username=None,
         updated_by_username=None,
