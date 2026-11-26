@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import uuid
 
@@ -42,6 +43,7 @@ from app.modules.ai.skills import (
     page_draft_system_prompt,
     selection_instructions,
     selection_system_prompt,
+    slides_system_prompt,
     suggest_system_prompt,
     suggestions_instructions,
     summary_instructions,
@@ -63,11 +65,13 @@ from app.schemas.ai import (
     PageClarify,
     PageDraft,
     PageDraftRequest,
+    PageSlideDeck,
     PageSuggestions,
     PageSummary,
     RelatedPage,
     RevisionDiffSummaryRead,
     RevisionDiffSummaryRequest,
+    SlideDeckItem,
     SuggestedLabel,
     SummaryAttachment,
 )
@@ -99,6 +103,75 @@ def summary_user_message(title: str, text: str, attachments: list[SummaryAttachm
         names = "\n".join(attachment.filename for attachment in attachments)
         message += f"\n<files>\n{names}\n</files>"
     return message
+
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+
+
+def _parse_slide_deck(raw: str, fallback_title: str) -> list[SlideDeckItem]:
+    """Extract structured slides from the model's JSON response with a safe fallback."""
+    cleaned = raw.strip()
+    fence = _JSON_FENCE_RE.search(cleaned)
+    if fence:
+        cleaned = fence.group(1).strip()
+    else:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end > start:
+            cleaned = cleaned[start : end + 1]
+
+    try:
+        payload = json.loads(cleaned)
+        raw_slides = payload.get("slides") if isinstance(payload, dict) else payload
+        if isinstance(raw_slides, list):
+            items: list[SlideDeckItem] = []
+            for entry in raw_slides[:12]:
+                if not isinstance(entry, dict):
+                    continue
+                title = str(entry.get("title") or "").strip()[:200]
+                if not title:
+                    continue
+                subtitle = str(entry.get("subtitle") or "").strip()[:300]
+                raw_bullets = entry.get("bullets")
+                bullets = (
+                    [str(b).strip()[:300] for b in raw_bullets if str(b).strip()][:8]
+                    if isinstance(raw_bullets, list)
+                    else []
+                )
+                callout = str(entry.get("callout") or "").strip()[:400]
+                notes = str(entry.get("speaker_notes") or "").strip()[:800]
+                layout = str(entry.get("layout") or "bullets").strip().lower()
+                if layout not in ("hero", "section", "bullets", "highlight"):
+                    layout = "bullets"
+                items.append(
+                    SlideDeckItem(
+                        title=title,
+                        subtitle=subtitle,
+                        bullets=bullets,
+                        callout=callout,
+                        speaker_notes=notes,
+                        layout=layout,  # type: ignore[arg-type]
+                    )
+                )
+            if items:
+                return items
+    except (ValueError, TypeError):
+        pass
+
+    # Fallback: parse markdown lines or bullet lines into a single summary slide
+    lines = [
+        line.lstrip("-*• ").strip()
+        for line in raw.splitlines()
+        if line.strip() and not line.strip().startswith("```")
+    ]
+    bullets = [line[:300] for line in lines if line][:6]
+    return [
+        SlideDeckItem(
+            title=fallback_title[:200] or "Overview",
+            bullets=bullets or ["Key takeaways from this page."],
+            layout="bullets",
+        )
+    ]
 
 
 class AIService:
@@ -565,6 +638,55 @@ class AIService:
         )
         await self._write(redis, wanted_key, translated)
         return answer(translated)
+
+    async def generate_slide_deck(
+        self, key: str, slug: str, *, refresh: bool = False, lang: str | None = None
+    ) -> PageSlideDeck:
+        """Condense a page into a structured executive slide deck (cached until the page changes)."""
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        page = await self._visible_page(key, slug)
+        stamp = page.updated_at.timestamp() if page.updated_at else 0
+        code = (lang or "").lower()
+        code = code if code in LANGUAGES else None
+        prompt = slides_system_prompt(code)
+        digest = hashlib.sha256(prompt.encode()).hexdigest()[:10]
+        base_key = f"ai:slides:{page.id}:{stamp}:{digest}"
+        wanted_key = f"{base_key}:{code}" if code else base_key
+        redis = get_redis()
+
+        if refresh:
+            await self._forget(redis, base_key)
+        elif cached := await self._read(redis, wanted_key):
+            try:
+                return PageSlideDeck.model_validate_json(cached).model_copy(
+                    update={"cached": True}
+                )
+            except ValueError:
+                pass
+
+        text = scrub_secrets(page_plain_text(page.content, settings.ai_max_input_chars))
+        if len(text) < 80:
+            return PageSlideDeck(slides=[], cached=False, too_short=True)
+
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
+        reply = await self._chat(
+            "summarize",
+            config,
+            [
+                {"role": "system", "content": prompt},
+                {
+                    "role": "user",
+                    "content": f"Title: {page.title}\n<page>\n{text}\n</page>",
+                },
+            ],
+            max_tokens=2400,
+        )
+        slides = _parse_slide_deck(reply, page.title)
+        result = PageSlideDeck(slides=slides, cached=False, too_short=False)
+        await self._write(redis, wanted_key, result.model_dump_json())
+        return result
 
     async def check_stale(self, key: str, slug: str, locale: str) -> StaleCheckRead:
         """Compare a page with the pages tied to it that were edited after it.

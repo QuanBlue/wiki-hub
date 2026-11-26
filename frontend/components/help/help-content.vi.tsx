@@ -64,7 +64,7 @@ export const sectionsVi: HelpSection[] = [
           <Code>updated:khoảng_thời_gian</Code> (ví dụ <Code>updated:&gt;2026-01</Code>).
           Tìm kiếm cũng liệt kê <strong>các trang của ứng dụng</strong> ở mục <strong>Đi tới</strong> -
           gõ <Code>đổi mật khẩu</Code> để mở thẳng form mật khẩu trong tài khoản, hoặc{" "}
-          <Code>quản lý user</Code> để tới Quản trị &gt; Users. Bắt đầu bằng <Code>:</Code> để dùng lệnh: <Code>:help</Code> mở trang hướng dẫn này (thêm chữ, như <Code>:help đổi mật khẩu</Code>, để tìm trong các hướng dẫn), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, và <Code>:ask câu hỏi</Code> để nhờ AI trả lời. Lối tắt Quản trị chỉ hiện khi tài khoản
+          <Code>quản lý user</Code> để tới Quản trị &gt; Users. Bắt đầu bằng <Code>:</Code> để dùng lệnh: <Code>:help</Code> mở trang hướng dẫn này (thêm chữ, như <Code>:help đổi mật khẩu</Code>, để tìm trong các hướng dẫn), <Code>:present</Code> biến trang đang xem thành bộ slide thuyết trình toàn màn hình, <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, và <Code>:ask câu hỏi</Code> để nhờ AI trả lời. Lối tắt Quản trị chỉ hiện khi tài khoản
           của bạn được phép mở.
         </Callout>
 
@@ -142,6 +142,11 @@ export const sectionsVi: HelpSection[] = [
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>R</Kbd></td>
                 <td className="p-2.5">Khi đang chỉnh sửa - được chặn lại để hỏi <em>&ldquo;Reload site?&rdquo;</em> thay vì âm thầm bỏ các thay đổi chưa lưu.</td>
+                <td className="p-2.5">Có</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>Alt</Kbd> + <Kbd>P</Kbd></td>
+                <td className="p-2.5">Khi đang xem một trang hoặc tài liệu chia sẻ công khai - mở chế độ <strong>Trình chiếu Slide (Presentation Mode)</strong> toàn màn hình với bố cục tự động, con trỏ laser (<Kbd>L</Kbd>), bút vẽ (<Kbd>D</Kbd>), lưới tổng quan (<Kbd>G</Kbd>), hiện từng ý (<Kbd>B</Kbd>) và ghi chú diễn giả (<Kbd>N</Kbd>).</td>
                 <td className="p-2.5">Có</td>
               </tr>
               <tr className="hover:bg-surface-hover">

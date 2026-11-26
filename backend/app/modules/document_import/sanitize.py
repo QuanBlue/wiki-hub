@@ -66,8 +66,8 @@ ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
     # `disabled` and `checked` only; a task-list checkbox is decoration, and
     # `name`/`value`/`formaction` have no business in page content.
     "input": {"type", "checked", "disabled", "class"},
-    "th": {"colspan", "rowspan", "colwidth", "style"},
-    "td": {"colspan", "rowspan", "colwidth", "style"},
+    "th": {"colspan", "rowspan", "colwidth", "style", "data-diagonal-down", "data-diagonal-up"},
+    "td": {"colspan", "rowspan", "colwidth", "style", "data-diagonal-down", "data-diagonal-up"},
     "thead": {"style"},
     "tr": {"style"},
     "table": {"class", "style"},
@@ -101,6 +101,10 @@ ALLOWED_STYLE_PROPERTIES: frozenset[str] = frozenset(
         "text-decoration",
         "vertical-align",
         "border",
+        "border-top",
+        "border-right",
+        "border-bottom",
+        "border-left",
         "border-collapse",
         "border-color",
         "border-style",

@@ -13,13 +13,26 @@ class OverviewTotals(BaseModel):
     new_users: int
     active_users: int
     spaces: int
+    new_spaces: int = 0
     pages: int
+    new_pages: int = 0
     edits: int
     views: int
     #: Average people active per day, over the days activity was tracked.
     daily_active_users: float
     #: Average time one active person spent in the app on a day, in seconds.
     active_seconds: int
+
+
+class OverviewPreviousTotals(BaseModel):
+    new_users: int = 0
+    active_users: int = 0
+    new_spaces: int = 0
+    new_pages: int = 0
+    edits: int = 0
+    views: int = 0
+    daily_active_users: float = 0.0
+    active_seconds: int = 0
 
 
 class OverviewDay(BaseModel):
@@ -43,7 +56,10 @@ class ActivityItem(BaseModel):
 
 class OverviewStats(BaseModel):
     range_days: int
+    start_date: date
+    end_date: date
     totals: OverviewTotals
+    previous: OverviewPreviousTotals
     daily: list[OverviewDay]
     recent_activity: list[ActivityItem]
     #: First day a view was counted; earlier opens were never recorded.
@@ -60,9 +76,19 @@ class AiTotals(BaseModel):
     users: int
 
 
+class AiPreviousTotals(BaseModel):
+    tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    calls: int = 0
+    users: int = 0
+
+
 class AiDay(BaseModel):
     day: date
     tokens: int
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     calls: int
 
 
@@ -80,12 +106,22 @@ class AiFeatureUsage(BaseModel):
     calls: int
 
 
+class AiModelUsage(BaseModel):
+    model: str
+    tokens: int
+    calls: int
+
+
 class AiStats(BaseModel):
     range_days: int
+    start_date: date
+    end_date: date
     totals: AiTotals
+    previous: AiPreviousTotals
     daily: list[AiDay]
     by_user: list[AiUserUsage]
     by_feature: list[AiFeatureUsage]
+    by_model: list[AiModelUsage]
     #: First time usage was recorded; earlier requests were never counted.
     tracked_since: datetime | None
 
@@ -101,9 +137,28 @@ class TopContentItem(BaseModel):
     stars: int
     #: ``None`` for spaces, which cannot be saved.
     saves: int | None = None
+    #: Total active pages inside a space; ``None`` for pages.
+    page_count: int | None = None
 
 
 class TopContent(BaseModel):
     range_days: int
+    start_date: date
+    end_date: date
     sort: str
     items: list[TopContentItem]
+
+
+class ContributorItem(BaseModel):
+    user_id: uuid.UUID | None
+    username: str
+    full_name: str | None
+    edits: int
+    pages_created: int
+
+
+class TopContributors(BaseModel):
+    range_days: int
+    start_date: date
+    end_date: date
+    items: list[ContributorItem]

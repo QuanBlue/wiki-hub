@@ -47,6 +47,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
 import { TABLE_COLUMN_HOVER_KEY } from "./table-extensions";
+import { TableBorderMenu } from "./table-border-menu";
 import { CellColorMenu, TableActionButton } from "./toolbar-controls";
 
 type TableMenuPosition = { left: number; top: number };
@@ -167,7 +168,7 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
     const rect = table.getBoundingClientRect();
     setPosition({
       // Leave enough room for the compact icon menu while keeping it on-screen.
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - 320)),
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 360)),
       top: Math.min(rect.bottom + 6, window.innerHeight - 52),
     });
   }, [editor]);
@@ -236,7 +237,7 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
         }
       }
       setContextMenuPos({
-        left: Math.max(8, Math.min(event.clientX, window.innerWidth - 320)),
+        left: Math.max(8, Math.min(event.clientX, window.innerWidth - 360)),
         top: Math.max(8, Math.min(event.clientY, window.innerHeight - 52)),
       });
     };
@@ -340,6 +341,10 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
           <Eraser aria-hidden />
         </TableActionButton>
         <CellColorMenu
+          editor={editor}
+          onSelectComplete={() => setContextMenuPos(null)}
+        />
+        <TableBorderMenu
           editor={editor}
           onSelectComplete={() => setContextMenuPos(null)}
         />

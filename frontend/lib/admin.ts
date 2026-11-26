@@ -5,9 +5,11 @@ import type {
   Page,
   SiteSettings,
   StatsAi,
+  StatsDateQuery,
   StatsOverview,
   StatsRange,
   StatsTopContent,
+  StatsTopContributors,
   User,
 } from "@/types/api";
 
@@ -72,29 +74,52 @@ export function listPermissionOverrideUsers(): Promise<User[]> {
   return serverGet<User[]>("/api/v1/users/permission-overrides");
 }
 
-export function getStatsOverview(range: StatsRange): Promise<StatsOverview> {
-  return serverGet<StatsOverview>(`/api/v1/admin/statistics/overview${queryString({ range })}`);
+function statsQueryParams(input: StatsRange | StatsDateQuery) {
+  if (typeof input === "string") return { range: input };
+  return {
+    range: input.start || input.end ? undefined : input.range,
+    start: input.start,
+    end: input.end,
+  };
 }
 
-export function getStatsAi(range: StatsRange): Promise<StatsAi> {
-  return serverGet<StatsAi>(`/api/v1/admin/statistics/ai${queryString({ range })}`);
+export function getStatsOverview(
+  range: StatsRange | StatsDateQuery,
+): Promise<StatsOverview> {
+  return serverGet<StatsOverview>(
+    `/api/v1/admin/statistics/overview${queryString(statsQueryParams(range))}`,
+  );
+}
+
+export function getStatsAi(range: StatsRange | StatsDateQuery): Promise<StatsAi> {
+  return serverGet<StatsAi>(
+    `/api/v1/admin/statistics/ai${queryString(statsQueryParams(range))}`,
+  );
 }
 
 export function getStatsTopPages(
-  range: StatsRange,
+  range: StatsRange | StatsDateQuery,
   sort: "views" | "stars" | "saves",
 ): Promise<StatsTopContent> {
   return serverGet<StatsTopContent>(
-    `/api/v1/admin/statistics/top-pages${queryString({ range, sort })}`,
+    `/api/v1/admin/statistics/top-pages${queryString({ ...statsQueryParams(range), sort })}`,
   );
 }
 
 export function getStatsTopSpaces(
-  range: StatsRange,
+  range: StatsRange | StatsDateQuery,
   sort: "views" | "stars",
 ): Promise<StatsTopContent> {
   return serverGet<StatsTopContent>(
-    `/api/v1/admin/statistics/top-spaces${queryString({ range, sort })}`,
+    `/api/v1/admin/statistics/top-spaces${queryString({ ...statsQueryParams(range), sort })}`,
+  );
+}
+
+export function getStatsTopContributors(
+  range: StatsRange | StatsDateQuery,
+): Promise<StatsTopContributors> {
+  return serverGet<StatsTopContributors>(
+    `/api/v1/admin/statistics/top-contributors${queryString(statsQueryParams(range))}`,
   );
 }
 

@@ -1403,7 +1403,7 @@ export function UserProfile({
   return (
     <div
       ref={layoutRef}
-      className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_21rem]"
+      className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_21rem] lg:grid-rows-1 lg:items-stretch"
     >
       <main className="min-w-0 lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
         <div className="shrink-0 px-2 pt-1">
@@ -2082,7 +2082,7 @@ export function UserProfile({
         </div>
       </main>
 
-      <aside className="space-y-5 lg:flex lg:h-full lg:flex-col lg:space-y-0 lg:gap-5">
+      <aside className="space-y-5 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:space-y-0 lg:gap-5">
         <section className="border-border bg-surface relative shrink-0 rounded-lg border">
           <div className="bg-primary-subtle aspect-[15/4] overflow-hidden rounded-t-lg">
             {user.cover_url ? (
@@ -2336,7 +2336,7 @@ export function UserProfile({
           </dl>
         </section>
         {/* Only what sits under the profile card scrolls when it does not fit. */}
-        <div className="wh-scroll space-y-5 lg:-mr-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <div className="wh-scroll space-y-5 lg:-mr-2.5 lg:pr-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           {isOwner && seasonalCalendar.length > 0 ? (
             <UpcomingHolidaysCard entries={seasonalCalendar} isAdmin={isAdmin} />
           ) : null}

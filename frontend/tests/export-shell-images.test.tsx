@@ -7,6 +7,7 @@ import { ExportShell } from "@/components/print/export-shell";
 import type { ExportBundle } from "@/types/api";
 
 let pendingDiagram = false;
+let emptyRenderer = false;
 
 // The real editor draws images asynchronously; a stand-in that has them in the
 // DOM when it reports ready lets the shell's wait-for-images path be exercised.
@@ -15,6 +16,7 @@ vi.mock("@/components/pages/rich-text-editor", () => ({
     useEffect(() => onReady?.(), [onReady]);
     return (
       <div>
+        {emptyRenderer ? <div className="react-renderer" /> : null}
         {pendingDiagram ? <div data-diagram-pending="true" /> : null}
         <img alt="a" src="/a.png" />
         <img alt="b" src="/b.png" />
@@ -106,4 +108,59 @@ describe("ExportShell images", () => {
       Reflect.deleteProperty(HTMLImageElement.prototype, "decode");
     }
   });
+
+  it("waits for empty react-renderer node view portals to mount and decodes late images", async () => {
+    emptyRenderer = true;
+    delete document.body.dataset.exportReady;
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    try {
+      const { container } = render(
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          <ExportShell bundle={bundle} />
+        </ThemeProvider>,
+      );
+      const host = await waitFor(() => {
+        const el = container.querySelector(".react-renderer");
+        expect(el).not.toBeNull();
+        return el as HTMLElement;
+      });
+      const lateImg = document.createElement("img");
+      lateImg.src = "/late.png";
+      Object.defineProperty(lateImg, "complete", { configurable: true, get: () => false });
+      const lateDecode = vi.fn().mockRejectedValue(new Error("late broken"));
+      Object.defineProperty(lateImg, "decode", { configurable: true, value: lateDecode });
+      host.appendChild(lateImg);
+
+      await waitFor(() => expect(document.body.dataset.exportReady).toBe("true"));
+      expect(lateDecode).toHaveBeenCalledTimes(1);
+    } finally {
+      emptyRenderer = false;
+      Reflect.deleteProperty(HTMLImageElement.prototype, "complete");
+    }
+  });
+
+  it("releases an export when an empty react-renderer never populates", async () => {
+    emptyRenderer = true;
+    delete document.body.dataset.exportReady;
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    try {
+      render(
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          <ExportShell bundle={bundle} />
+        </ThemeProvider>,
+      );
+      await waitFor(() => expect(document.body.dataset.exportReady).toBe("true"), {
+        timeout: 4_000,
+      });
+    } finally {
+      emptyRenderer = false;
+      Reflect.deleteProperty(HTMLImageElement.prototype, "complete");
+    }
+  }, 6_000);
 });

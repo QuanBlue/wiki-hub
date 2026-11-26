@@ -320,9 +320,15 @@ describe("TemplateManager", () => {
       screen.queryByRole("button", { name: "Delete Meeting notes" }),
     ).toBeNull();
 
-    // Create a new global template
+    // Create a new global template (defaults to Normal rich-text editor; can switch to HTML/Markdown)
     await actor.click(screen.getByRole("button", { name: "New template" }));
     const createDialog = await screen.findByRole("dialog");
+    const formatSelect = within(createDialog).getByLabelText("Format");
+    expect(formatSelect).toHaveValue("normal");
+    expect(
+      createDialog.querySelector(".wikihub-template-editor"),
+    ).not.toBeNull();
+
     await actor.type(within(createDialog).getByLabelText("Name"), "Postmortem");
     await actor.type(
       within(createDialog).getByLabelText("Category"),
@@ -332,6 +338,7 @@ describe("TemplateManager", () => {
       within(createDialog).getByLabelText("Description"),
       "Incident review",
     );
+    await actor.selectOptions(formatSelect, "html");
     await actor.type(
       within(createDialog).getByLabelText("Content"),
       "<h2>Summary</h2>",
@@ -405,7 +412,22 @@ describe("TemplateManager", () => {
       screen.getByRole("button", { name: "Edit Service Runbook" }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: "Duplicate Service Runbook" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "Delete Service Runbook" }),
+    ).toBeInTheDocument();
+
+    // Scope filter tabs split into All, Custom, Built-in
+    const scopeGroup = screen.getByRole("group", { name: "Scope" });
+    expect(
+      within(scopeGroup).getByRole("button", { name: /All/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(scopeGroup).getByRole("button", { name: /Custom/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(scopeGroup).getByRole("button", { name: /Built-in/i }),
     ).toBeInTheDocument();
 
     // Global template in space mode is read-only

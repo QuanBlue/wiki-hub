@@ -189,8 +189,10 @@ export function normalizeConfluenceCodeMacros(content: string): string {
   );
 
   // Normalize <pre><code class="language-mermaid"> into <div data-type="diagram" ...>
+  // Skip the hidden fallback <pre class="mermaid-src hidden"> that DiagramNode.renderHTML
+  // nests inside an already-normalized <div data-type="diagram">.
   res = res.replace(
-    /<pre\b[^>]*>\s*<code\b[^>]*class=["'][^"']*language-mermaid[^"']*["'][^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi,
+    /<pre\b(?![^>]*\bmermaid-src\b)[^>]*>\s*<code\b[^>]*class=["'][^"']*language-mermaid[^"']*["'][^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi,
     (_match, code) => {
       const decoded = code
         .replace(/&amp;/g, "&")
@@ -281,7 +283,7 @@ export const editorClassName =
   // Table rhythm (margin, cell minimum width, padding, and line-height) is
   // kept identical to readerClassName below so rows have the same height in
   // the editor and in the live preview.
-  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-primary-subtle [&_th]:text-foreground [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-bold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:bg-surface [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
 
 // Imported pages are read like documentation, not like an editor canvas.
 // Keep this separate from editorClassName so editing remains comfortable while
@@ -307,7 +309,7 @@ export const readerClassName =
   // Tables are persisted with their column widths in `colwidth` attributes.
   // Fixed layout makes the reader honour those widths instead of allowing an
   // unbroken word to redistribute every column after the page is saved.
-  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_th]:min-w-24 [&_th]:break-words [&_th]:whitespace-normal [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:break-words [&_td]:whitespace-normal [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_th]:min-w-24 [&_th]:break-words [&_th]:whitespace-normal [&_th]:border [&_th]:border-border [&_th]:bg-primary-subtle [&_th]:text-foreground [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-bold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:break-words [&_td]:whitespace-normal [&_td]:border [&_td]:border-border [&_td]:bg-surface [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
 
 // A toggled-on toolbar control. Hover has to stay blue: the ghost button's own
 // hover swaps in the grey surface and the dark text colour, which made a

@@ -34,6 +34,23 @@ class PageSummary(BaseModel):
     too_short: bool = False
 
 
+class SlideDeckItem(BaseModel):
+    """One slide in an AI-generated executive presentation deck."""
+
+    title: str = Field(min_length=1, max_length=200)
+    subtitle: str = Field(default="", max_length=300)
+    bullets: list[str] = Field(default_factory=list, max_length=8)
+    callout: str = Field(default="", max_length=400)
+    speaker_notes: str = Field(default="", max_length=800)
+    layout: Literal["hero", "section", "bullets", "highlight"] = "bullets"
+
+
+class PageSlideDeck(BaseModel):
+    slides: list[SlideDeckItem] = []
+    cached: bool = False
+    too_short: bool = False
+
+
 class RevisionDiffSummaryRequest(BaseModel):
     from_version: int | None = Field(default=None, ge=0)
     to_version: int | None = Field(default=None, ge=1)

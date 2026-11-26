@@ -1,25 +1,36 @@
 import type { Metadata } from "next";
 
-import { StatisticsView } from "@/components/admin/statistics/statistics-view";
+import {
+  StatisticsView,
+  type StatsTab,
+} from "@/components/admin/statistics/statistics-view";
 import {
   getStatsAi,
   getStatsOverview,
+  getStatsTopContributors,
   getStatsTopPages,
   getStatsTopSpaces,
 } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth";
 import { getServerLocale } from "@/lib/i18n/server";
-import type { StatsRange } from "@/types/api";
+import type { StatsDateQuery, StatsRange } from "@/types/api";
 
 export const metadata: Metadata = { title: "Statistics" };
 export const dynamic = "force-dynamic";
 
 const RANGES: StatsRange[] = ["7d", "30d", "90d"];
+const TABS: StatsTab[] = ["overview", "content", "ai"];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function AdminStatisticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{
+    range?: string;
+    start?: string;
+    end?: string;
+    tab?: string;
+  }>;
 }) {
   const [me, { t }, params] = await Promise.all([
     getCurrentUser(),
@@ -31,7 +42,9 @@ export default async function AdminStatisticsPage({
   if (!me?.is_superuser) {
     return (
       <div className="border-border bg-surface rounded-xl border p-6 shadow-sm">
-        <p className="font-semibold">{t("adminShared.permissionRequiredTitle")}</p>
+        <p className="font-semibold">
+          {t("adminShared.permissionRequiredTitle")}
+        </p>
         <p className="text-muted-foreground mt-1 text-sm">
           {t("adminShared.permissionRequiredBody", {
             feature: t("adminStats.permissionFeature"),
@@ -43,16 +56,38 @@ export default async function AdminStatisticsPage({
   }
 
   const range = RANGES.find((option) => option === params.range) ?? "30d";
-  const [overview, ai, pagesViews, pagesStars, pagesSaves, spacesViews, spacesStars] =
-    await Promise.all([
-      getStatsOverview(range),
-      getStatsAi(range),
-      getStatsTopPages(range, "views"),
-      getStatsTopPages(range, "stars"),
-      getStatsTopPages(range, "saves"),
-      getStatsTopSpaces(range, "views"),
-      getStatsTopSpaces(range, "stars"),
-    ]);
+  const initialTab = TABS.find((option) => option === params.tab) ?? "overview";
+  const validCustom =
+    Boolean(
+      params.start &&
+        params.end &&
+        ISO_DATE.test(params.start) &&
+        ISO_DATE.test(params.end) &&
+        params.start <= params.end,
+    );
+  const query: StatsRange | StatsDateQuery = validCustom
+    ? { start: params.start, end: params.end }
+    : range;
+
+  const [
+    overview,
+    ai,
+    pagesViews,
+    pagesStars,
+    pagesSaves,
+    spacesViews,
+    spacesStars,
+    contributors,
+  ] = await Promise.all([
+    getStatsOverview(query),
+    getStatsAi(query),
+    getStatsTopPages(query, "views"),
+    getStatsTopPages(query, "stars"),
+    getStatsTopPages(query, "saves"),
+    getStatsTopSpaces(query, "views"),
+    getStatsTopSpaces(query, "stars"),
+    getStatsTopContributors(query),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -69,10 +104,14 @@ export default async function AdminStatisticsPage({
       </header>
       <StatisticsView
         range={range}
+        initialTab={initialTab}
+        initialStart={validCustom ? params.start : undefined}
+        initialEnd={validCustom ? params.end : undefined}
         overview={overview}
         ai={ai}
         pages={{ views: pagesViews, stars: pagesStars, saves: pagesSaves }}
         spaces={{ views: spacesViews, stars: spacesStars }}
+        contributors={contributors}
       />
     </div>
   );

@@ -2,54 +2,178 @@ import { TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { TableMap } from "@tiptap/pm/tables";
+import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { type Editor } from "@tiptap/react";
+
+const NO_BORDER_VALUE = "0px solid transparent";
+
+function isNoBorderValue(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim().toLowerCase();
+  return (
+    trimmed === "none" ||
+    trimmed === "0" ||
+    trimmed.startsWith("0px") ||
+    trimmed.includes(" none")
+  );
+}
+
+function parseUniformBorder(element: HTMLElement): string | null {
+  const shorthand = element.style.getPropertyValue("border").trim();
+  if (shorthand) return shorthand;
+  if (
+    element.style.borderStyle === "none" ||
+    element.style.borderWidth === "0px"
+  ) {
+    return NO_BORDER_VALUE;
+  }
+  return null;
+}
+
+function parseSideBorder(
+  element: HTMLElement,
+  side: "top" | "right" | "bottom" | "left",
+): string | null {
+  if (parseUniformBorder(element)) return null;
+  const value = element.style.getPropertyValue(`border-${side}`).trim();
+  if (value) return value;
+  const styleProp = element.style
+    .getPropertyValue(`border-${side}-style`)
+    .trim();
+  const widthProp = element.style
+    .getPropertyValue(`border-${side}-width`)
+    .trim();
+  if (styleProp === "none" || widthProp === "0px") return NO_BORDER_VALUE;
+  return null;
+}
+
+const tableCellFormattingAttributes = {
+  backgroundColor: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.backgroundColor || null,
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.backgroundColor
+        ? { style: `background-color: ${attributes.backgroundColor}` }
+        : {},
+  },
+  textAlign: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.textAlign || null,
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.textAlign ? { style: `text-align: ${attributes.textAlign}` } : {},
+  },
+  color: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.color || null,
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.color ? { style: `color: ${attributes.color}` } : {},
+  },
+  fontSize: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.fontSize || null,
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.fontSize ? { style: `font-size: ${attributes.fontSize}` } : {},
+  },
+  widthPercent: {
+    default: null,
+    parseHTML: (element: HTMLElement) => {
+      const value = element.style.width.trim();
+      return value.endsWith("%") ? value : null;
+    },
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.widthPercent
+        ? { style: `width: ${attributes.widthPercent}` }
+        : {},
+  },
+  verticalAlign: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.verticalAlign || null,
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.verticalAlign
+        ? { style: `vertical-align: ${attributes.verticalAlign}` }
+        : {},
+  },
+  border: {
+    default: null,
+    parseHTML: (element: HTMLElement) => parseUniformBorder(element),
+    renderHTML: (attributes: Record<string, unknown>) =>
+      attributes.border ? { style: `border: ${attributes.border}` } : {},
+  },
+  borderTop: {
+    default: null,
+    parseHTML: (element: HTMLElement) => parseSideBorder(element, "top"),
+    renderHTML: (attributes: Record<string, unknown>) =>
+      !attributes.border && attributes.borderTop
+        ? { style: `border-top: ${attributes.borderTop}` }
+        : {},
+  },
+  borderRight: {
+    default: null,
+    parseHTML: (element: HTMLElement) => parseSideBorder(element, "right"),
+    renderHTML: (attributes: Record<string, unknown>) =>
+      !attributes.border && attributes.borderRight
+        ? { style: `border-right: ${attributes.borderRight}` }
+        : {},
+  },
+  borderBottom: {
+    default: null,
+    parseHTML: (element: HTMLElement) => parseSideBorder(element, "bottom"),
+    renderHTML: (attributes: Record<string, unknown>) =>
+      !attributes.border && attributes.borderBottom
+        ? { style: `border-bottom: ${attributes.borderBottom}` }
+        : {},
+  },
+  borderLeft: {
+    default: null,
+    parseHTML: (element: HTMLElement) => parseSideBorder(element, "left"),
+    renderHTML: (attributes: Record<string, unknown>) =>
+      !attributes.border && attributes.borderLeft
+        ? { style: `border-left: ${attributes.borderLeft}` }
+        : {},
+  },
+  diagonalDown: {
+    default: null,
+    parseHTML: (element: HTMLElement) =>
+      element.getAttribute("data-diagonal-down") || null,
+    renderHTML: (attributes: Record<string, unknown>) => {
+      if (typeof attributes.diagonalDown !== "string" || !attributes.diagonalDown)
+        return {};
+      const parsed = parseBorderDeclaration(attributes.diagonalDown);
+      const halfWidth = parsed
+        ? Math.max(0.75, Number.parseFloat(parsed.width) / 2)
+        : 0.75;
+      const color = parsed?.color ?? DEFAULT_BORDER_COLOR;
+      return {
+        "data-diagonal-down": attributes.diagonalDown,
+        style: `--wh-diag-down-color: ${color}; --wh-diag-down-width: ${halfWidth}px`,
+      };
+    },
+  },
+  diagonalUp: {
+    default: null,
+    parseHTML: (element: HTMLElement) =>
+      element.getAttribute("data-diagonal-up") || null,
+    renderHTML: (attributes: Record<string, unknown>) => {
+      if (typeof attributes.diagonalUp !== "string" || !attributes.diagonalUp)
+        return {};
+      const parsed = parseBorderDeclaration(attributes.diagonalUp);
+      const halfWidth = parsed
+        ? Math.max(0.75, Number.parseFloat(parsed.width) / 2)
+        : 0.75;
+      const color = parsed?.color ?? DEFAULT_BORDER_COLOR;
+      return {
+        "data-diagonal-up": attributes.diagonalUp,
+        style: `--wh-diag-up-color: ${color}; --wh-diag-up-width: ${halfWidth}px`,
+      };
+    },
+  },
+};
 
 export const TableCellWithBackground = TableCell.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      backgroundColor: {
-        default: null,
-        parseHTML: (element) => element.style.backgroundColor || null,
-        renderHTML: (attributes) =>
-          attributes.backgroundColor
-            ? { style: `background-color: ${attributes.backgroundColor}` }
-            : {},
-      },
-      textAlign: {
-        default: null,
-        parseHTML: (element) => element.style.textAlign || null,
-        renderHTML: (attributes) =>
-          attributes.textAlign
-            ? { style: `text-align: ${attributes.textAlign}` }
-            : {},
-      },
-      color: {
-        default: null,
-        parseHTML: (element) => element.style.color || null,
-        renderHTML: (attributes) =>
-          attributes.color ? { style: `color: ${attributes.color}` } : {},
-      },
-      fontSize: {
-        default: null,
-        parseHTML: (element) => element.style.fontSize || null,
-        renderHTML: (attributes) =>
-          attributes.fontSize
-            ? { style: `font-size: ${attributes.fontSize}` }
-            : {},
-      },
-      widthPercent: {
-        default: null,
-        parseHTML: (element) => {
-          const value = element.style.width.trim();
-          return value.endsWith("%") ? value : null;
-        },
-        renderHTML: (attributes) =>
-          attributes.widthPercent
-            ? { style: `width: ${attributes.widthPercent}` }
-            : {},
-      },
+      ...tableCellFormattingAttributes,
     };
   },
 });
@@ -57,50 +181,430 @@ export const TableHeaderWithBackground = TableHeader.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      backgroundColor: {
-        default: null,
-        parseHTML: (element) => element.style.backgroundColor || null,
-        renderHTML: (attributes) =>
-          attributes.backgroundColor
-            ? { style: `background-color: ${attributes.backgroundColor}` }
-            : {},
-      },
-      textAlign: {
-        default: null,
-        parseHTML: (element) => element.style.textAlign || null,
-        renderHTML: (attributes) =>
-          attributes.textAlign
-            ? { style: `text-align: ${attributes.textAlign}` }
-            : {},
-      },
-      color: {
-        default: null,
-        parseHTML: (element) => element.style.color || null,
-        renderHTML: (attributes) =>
-          attributes.color ? { style: `color: ${attributes.color}` } : {},
-      },
-      fontSize: {
-        default: null,
-        parseHTML: (element) => element.style.fontSize || null,
-        renderHTML: (attributes) =>
-          attributes.fontSize
-            ? { style: `font-size: ${attributes.fontSize}` }
-            : {},
-      },
-      widthPercent: {
-        default: null,
-        parseHTML: (element) => {
-          const value = element.style.width.trim();
-          return value.endsWith("%") ? value : null;
-        },
-        renderHTML: (attributes) =>
-          attributes.widthPercent
-            ? { style: `width: ${attributes.widthPercent}` }
-            : {},
-      },
+      ...tableCellFormattingAttributes,
     };
   },
 });
+
+export type TableBorderScope = "table" | "cells";
+export type TableBorderPlacement =
+  | "bottom"
+  | "top"
+  | "left"
+  | "right"
+  | "none"
+  | "all"
+  | "outer"
+  | "inside"
+  | "inside-horizontal"
+  | "inside-vertical"
+  | "diagonal-down"
+  | "diagonal-up";
+export type TableBorderStyle =
+  | "solid"
+  | "dotted"
+  | "dashed"
+  | "double"
+  | "groove"
+  | "ridge"
+  | "inset"
+  | "outset";
+export type TableBorderWidth = "1px" | "2px" | "3px" | "4px";
+
+export type TableBorderConfig = {
+  placement: TableBorderPlacement;
+  style: TableBorderStyle;
+  width: TableBorderWidth;
+  color: string;
+};
+
+const DEFAULT_BORDER_COLOR = "var(--border-strong)";
+
+const BORDER_STYLE_RE =
+  /^(\d+(?:\.\d+)?px)\s+(solid|dotted|dashed|double|groove|ridge|inset|outset)\s+(.+)$/i;
+
+function parseBorderDeclaration(raw: string | null | undefined): {
+  width: TableBorderWidth;
+  style: TableBorderStyle;
+  color: string;
+} | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed || isNoBorderValue(trimmed)) return null;
+  const match = trimmed.match(BORDER_STYLE_RE);
+  if (!match) return null;
+  const px = Math.round(Number.parseFloat(match[1]!));
+  const width: TableBorderWidth =
+    px >= 4 ? "4px" : px === 3 ? "3px" : px === 2 ? "2px" : "1px";
+  const style = match[2]!.toLowerCase() as TableBorderStyle;
+  const color = match[3]!.trim();
+  return { width, style, color };
+}
+
+export function hasMultiCellSelection(editor: Editor | null): boolean {
+  if (!editor) return false;
+  const sel = editor.state.selection as unknown as {
+    $anchorCell?: { pos: number };
+    $headCell?: { pos: number };
+  };
+  return Boolean(
+    sel.$anchorCell &&
+      sel.$headCell &&
+      sel.$anchorCell.pos !== sel.$headCell.pos,
+  );
+}
+
+export function getSelectedCellCount(editor: Editor | null): number {
+  if (!editor) return 0;
+  const { selection } = editor.state;
+  if (selection instanceof CellSelection) {
+    let count = 0;
+    selection.forEachCell(() => {
+      count += 1;
+    });
+    return count;
+  }
+  const { $from } = selection;
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const role = $from.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") return 1;
+  }
+  return 0;
+}
+
+export function readTableBorderConfig(editor: Editor | null): TableBorderConfig {
+  const fallback: TableBorderConfig = {
+    placement: "all",
+    style: "solid",
+    width: "1px",
+    color: DEFAULT_BORDER_COLOR,
+  };
+  if (!editor) return fallback;
+
+  const { $from } = editor.state.selection;
+  let cellAttrs: Record<string, unknown> | null = null;
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const node = $from.node(depth);
+    if (node.type.name === "tableCell" || node.type.name === "tableHeader") {
+      cellAttrs = node.attrs;
+      break;
+    }
+  }
+  if (!cellAttrs) return fallback;
+
+  const border = typeof cellAttrs.border === "string" ? cellAttrs.border : null;
+  const borderTop =
+    typeof cellAttrs.borderTop === "string" ? cellAttrs.borderTop : null;
+  const borderRight =
+    typeof cellAttrs.borderRight === "string" ? cellAttrs.borderRight : null;
+  const borderBottom =
+    typeof cellAttrs.borderBottom === "string" ? cellAttrs.borderBottom : null;
+  const borderLeft =
+    typeof cellAttrs.borderLeft === "string" ? cellAttrs.borderLeft : null;
+  const diagonalDown =
+    typeof cellAttrs.diagonalDown === "string" ? cellAttrs.diagonalDown : null;
+  const diagonalUp =
+    typeof cellAttrs.diagonalUp === "string" ? cellAttrs.diagonalUp : null;
+
+  if (isNoBorderValue(border)) {
+    const diagParsed =
+      parseBorderDeclaration(diagonalDown) ?? parseBorderDeclaration(diagonalUp);
+    if (diagParsed) {
+      return {
+        placement: diagonalDown ? "diagonal-down" : "diagonal-up",
+        ...diagParsed,
+      };
+    }
+    return { ...fallback, placement: "none" };
+  }
+
+  const parsedUniform = parseBorderDeclaration(border);
+  if (parsedUniform) {
+    return { placement: "all", ...parsedUniform };
+  }
+
+  const sides = [borderTop, borderRight, borderBottom, borderLeft];
+  const parsedSide = sides
+    .map((s) => parseBorderDeclaration(s))
+    .find((p) => p !== null);
+
+  if (parsedSide) {
+    const hasTop = !isNoBorderValue(borderTop) && borderTop !== null;
+    const hasRight = !isNoBorderValue(borderRight) && borderRight !== null;
+    const hasBottom = !isNoBorderValue(borderBottom) && borderBottom !== null;
+    const hasLeft = !isNoBorderValue(borderLeft) && borderLeft !== null;
+    let placement: TableBorderPlacement = "outer";
+    if (hasBottom && !hasTop && !hasLeft && !hasRight) placement = "bottom";
+    else if (hasTop && !hasBottom && !hasLeft && !hasRight) placement = "top";
+    else if (hasLeft && !hasTop && !hasBottom && !hasRight) placement = "left";
+    else if (hasRight && !hasTop && !hasBottom && !hasLeft) placement = "right";
+    else if ((hasTop || hasBottom) && !hasLeft && !hasRight)
+      placement = "inside-horizontal";
+    else if ((hasLeft || hasRight) && !hasTop && !hasBottom)
+      placement = "inside-vertical";
+    return { placement, ...parsedSide };
+  }
+
+  if (sides.some((s) => isNoBorderValue(s))) {
+    return { ...fallback, placement: "outer" };
+  }
+
+  return fallback;
+}
+
+function expandCellSides(attrs: Record<string, unknown>): {
+  borderTop: string | null;
+  borderRight: string | null;
+  borderBottom: string | null;
+  borderLeft: string | null;
+} {
+  const uniform = typeof attrs.border === "string" ? attrs.border : null;
+  if (uniform) {
+    return {
+      borderTop: uniform,
+      borderRight: uniform,
+      borderBottom: uniform,
+      borderLeft: uniform,
+    };
+  }
+  return {
+    borderTop: typeof attrs.borderTop === "string" ? attrs.borderTop : null,
+    borderRight:
+      typeof attrs.borderRight === "string" ? attrs.borderRight : null,
+    borderBottom:
+      typeof attrs.borderBottom === "string" ? attrs.borderBottom : null,
+    borderLeft: typeof attrs.borderLeft === "string" ? attrs.borderLeft : null,
+  };
+}
+
+export function applyTableBorder(
+  editor: Editor | null,
+  scope: TableBorderScope,
+  config: TableBorderConfig | "reset",
+): boolean {
+  if (!editor) return false;
+
+  return editor
+    .chain()
+    .command(({ state, tr, dispatch }) => {
+      const { selection } = state;
+      const { $from, $to } = selection;
+
+      let tableDepth = -1;
+      for (let depth = $from.depth; depth >= 1; depth -= 1) {
+        if ($from.node(depth).type.name === "table") {
+          tableDepth = depth;
+          break;
+        }
+      }
+      if (tableDepth < 0) return false;
+
+      const tableNode = $from.node(tableDepth);
+      const tableStart = $from.before(tableDepth) + 1;
+      const map = TableMap.get(tableNode);
+
+      const targetOffsets = new Set<number>();
+      let bounds = {
+        top: 0,
+        bottom: map.height,
+        left: 0,
+        right: map.width,
+      };
+
+      if (scope === "table") {
+        for (const offset of map.map) {
+          targetOffsets.add(offset);
+        }
+      } else {
+        const cellSel = selection as unknown as {
+          $anchorCell?: { pos: number };
+          $headCell?: { pos: number };
+        };
+        if (cellSel.$anchorCell && cellSel.$headCell) {
+          const rect = map.rectBetween(
+            cellSel.$anchorCell.pos - tableStart,
+            cellSel.$headCell.pos - tableStart,
+          );
+          bounds = rect;
+          for (const offset of map.cellsInRect(rect)) {
+            targetOffsets.add(offset);
+          }
+        } else {
+          let minTop = map.height;
+          let maxBottom = 0;
+          let minLeft = map.width;
+          let maxRight = 0;
+          const seen = new Set<number>();
+          for (const offset of map.map) {
+            if (seen.has(offset)) continue;
+            seen.add(offset);
+            const cellNode = tableNode.nodeAt(offset);
+            if (!cellNode) continue;
+            const cellPos = tableStart + offset;
+            const cellEnd = cellPos + cellNode.nodeSize - 1;
+            const matches = selection.empty
+              ? $from.pos >= cellPos && $from.pos <= cellEnd + 1
+              : $from.pos <= cellEnd && $to.pos >= cellPos + 1;
+            if (matches) {
+              targetOffsets.add(offset);
+              const r = map.findCell(offset);
+              minTop = Math.min(minTop, r.top);
+              maxBottom = Math.max(maxBottom, r.bottom);
+              minLeft = Math.min(minLeft, r.left);
+              maxRight = Math.max(maxRight, r.right);
+            }
+          }
+          if (targetOffsets.size > 0) {
+            bounds = {
+              top: minTop,
+              bottom: maxBottom,
+              left: minLeft,
+              right: maxRight,
+            };
+          }
+        }
+      }
+
+      if (targetOffsets.size === 0) return false;
+
+      const value =
+        config === "reset"
+          ? null
+          : `${config.width} ${config.style} ${config.color}`;
+
+      // For diagonal toggles, check if every target cell already has the exact same diagonal.
+      const allHaveDiagonalDown =
+        config !== "reset" &&
+        config.placement === "diagonal-down" &&
+        Array.from(targetOffsets).every(
+          (offset) => tableNode.nodeAt(offset)?.attrs.diagonalDown === value,
+        );
+      const allHaveDiagonalUp =
+        config !== "reset" &&
+        config.placement === "diagonal-up" &&
+        Array.from(targetOffsets).every(
+          (offset) => tableNode.nodeAt(offset)?.attrs.diagonalUp === value,
+        );
+
+      for (const offset of targetOffsets) {
+        const cellNode = tableNode.nodeAt(offset);
+        if (!cellNode) continue;
+        const r = map.findCell(offset);
+
+        let borderAttrs: Record<string, string | null>;
+        if (config === "reset") {
+          borderAttrs = {
+            border: null,
+            borderTop: null,
+            borderRight: null,
+            borderBottom: null,
+            borderLeft: null,
+            diagonalDown: null,
+            diagonalUp: null,
+          };
+        } else if (config.placement === "none") {
+          borderAttrs = {
+            border: NO_BORDER_VALUE,
+            borderTop: null,
+            borderRight: null,
+            borderBottom: null,
+            borderLeft: null,
+            diagonalDown: null,
+            diagonalUp: null,
+          };
+        } else if (config.placement === "all") {
+          borderAttrs = {
+            border: value,
+            borderTop: null,
+            borderRight: null,
+            borderBottom: null,
+            borderLeft: null,
+          };
+        } else if (config.placement === "outer") {
+          borderAttrs = {
+            border: null,
+            borderTop: r.top === bounds.top ? value : NO_BORDER_VALUE,
+            borderRight: r.right === bounds.right ? value : NO_BORDER_VALUE,
+            borderBottom: r.bottom === bounds.bottom ? value : NO_BORDER_VALUE,
+            borderLeft: r.left === bounds.left ? value : NO_BORDER_VALUE,
+          };
+        } else if (config.placement === "inside") {
+          borderAttrs = {
+            border: null,
+            borderTop: r.top > bounds.top ? value : NO_BORDER_VALUE,
+            borderRight: r.right < bounds.right ? value : NO_BORDER_VALUE,
+            borderBottom: r.bottom < bounds.bottom ? value : NO_BORDER_VALUE,
+            borderLeft: r.left > bounds.left ? value : NO_BORDER_VALUE,
+          };
+        } else if (config.placement === "inside-horizontal") {
+          borderAttrs = {
+            border: null,
+            borderTop: r.top > bounds.top ? value : NO_BORDER_VALUE,
+            borderRight: NO_BORDER_VALUE,
+            borderBottom: r.bottom < bounds.bottom ? value : NO_BORDER_VALUE,
+            borderLeft: NO_BORDER_VALUE,
+          };
+        } else if (config.placement === "inside-vertical") {
+          borderAttrs = {
+            border: null,
+            borderTop: NO_BORDER_VALUE,
+            borderRight: r.right < bounds.right ? value : NO_BORDER_VALUE,
+            borderBottom: NO_BORDER_VALUE,
+            borderLeft: r.left > bounds.left ? value : NO_BORDER_VALUE,
+          };
+        } else if (config.placement === "bottom") {
+          if (r.bottom !== bounds.bottom) continue;
+          const sides = expandCellSides(cellNode.attrs);
+          borderAttrs = {
+            border: null,
+            ...sides,
+            borderBottom: value,
+          };
+        } else if (config.placement === "top") {
+          if (r.top !== bounds.top) continue;
+          const sides = expandCellSides(cellNode.attrs);
+          borderAttrs = {
+            border: null,
+            ...sides,
+            borderTop: value,
+          };
+        } else if (config.placement === "left") {
+          if (r.left !== bounds.left) continue;
+          const sides = expandCellSides(cellNode.attrs);
+          borderAttrs = {
+            border: null,
+            ...sides,
+            borderLeft: value,
+          };
+        } else if (config.placement === "right") {
+          if (r.right !== bounds.right) continue;
+          const sides = expandCellSides(cellNode.attrs);
+          borderAttrs = {
+            border: null,
+            ...sides,
+            borderRight: value,
+          };
+        } else if (config.placement === "diagonal-down") {
+          borderAttrs = {
+            diagonalDown: allHaveDiagonalDown ? null : value,
+          };
+        } else {
+          borderAttrs = {
+            diagonalUp: allHaveDiagonalUp ? null : value,
+          };
+        }
+
+        tr.setNodeMarkup(tableStart + offset, undefined, {
+          ...cellNode.attrs,
+          ...borderAttrs,
+        });
+      }
+
+      if (dispatch && tr.docChanged) dispatch(tr);
+      return true;
+    })
+    .run();
+}
 
 function normaliseTableRowHeight(value: unknown): number | null {
   const height = Number.parseFloat(String(value ?? ""));
@@ -408,6 +912,12 @@ export const TableColumnResize = Extension.create({
           handleDOMEvents: {
             mousemove: (view, event) => {
               if (activeResize || !view.editable) return false;
+              // Never mutate column-hover decorations while a mouse button is
+              // held down (e.g. dragging to select text or multiple cells).
+              if (event.buttons !== 0) {
+                clearColumnHover(view);
+                return false;
+              }
               const target = resizeTarget(view, event);
               updateColumnHover(view, target);
               return false;
@@ -756,6 +1266,259 @@ export const TableCellTripleClick = Extension.create({
             return true;
           },
         },
+      }),
+    ];
+  },
+});
+
+function cellPosFromDOM(
+  view: Editor["view"],
+  cell: HTMLElement,
+): number | null {
+  try {
+    const innerPos = view.posAtDOM(cell, 0);
+    const $pos = view.state.doc.resolve(innerPos);
+    for (let depth = $pos.depth; depth > 0; depth -= 1) {
+      const role = $pos.node(depth).type.spec.tableRole;
+      if (role === "cell" || role === "header_cell") {
+        return $pos.before(depth);
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function sameTableCells(
+  doc: Editor["state"]["doc"],
+  anchorCellPos: number,
+  headCellPos: number,
+): boolean {
+  try {
+    const $a = doc.resolve(anchorCellPos);
+    const $h = doc.resolve(headCellPos);
+    return (
+      $a.depth === $h.depth &&
+      $a.depth >= 2 &&
+      $a.start(-1) === $h.start(-1)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function findCellInTableAtPoint(
+  table: HTMLTableElement,
+  clientX: number,
+  clientY: number,
+  eventTarget: EventTarget | null,
+): HTMLTableCellElement | null {
+  const direct =
+    eventTarget instanceof Element
+      ? (eventTarget.closest("td, th") as HTMLTableCellElement | null)
+      : null;
+  if (direct && direct.closest("table") === table) {
+    return direct;
+  }
+
+  const probe = (x: number, y: number): HTMLTableCellElement | null => {
+    if (typeof document.elementsFromPoint === "function") {
+      const elements = document.elementsFromPoint(x, y);
+      for (const el of elements) {
+        const cell = el.closest("td, th") as HTMLTableCellElement | null;
+        if (cell && cell.closest("table") === table) return cell;
+      }
+    }
+    return null;
+  };
+
+  const atCursor = probe(clientX, clientY);
+  if (atCursor) return atCursor;
+
+  // When dragging past the table's outer edge (e.g. selecting an entire row or
+  // column), clamp the coordinates into the table rect and pick the nearest
+  // cell so the drag still reaches the first/last row or column.
+  const rect = table.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    const clampedX = Math.min(rect.right - 2, Math.max(rect.left + 2, clientX));
+    const clampedY = Math.min(rect.bottom - 2, Math.max(rect.top + 2, clientY));
+    const atClamped = probe(clampedX, clampedY);
+    if (atClamped) return atClamped;
+
+    // Fallback by geometry (also works in test environments without elementsFromPoint).
+    const cells = Array.from(table.querySelectorAll("td, th")).filter(
+      (cell) => cell.closest("table") === table,
+    ) as HTMLTableCellElement[];
+    for (const cell of cells) {
+      const box = cell.getBoundingClientRect();
+      if (
+        clampedX >= box.left &&
+        clampedX <= box.right &&
+        clampedY >= box.top &&
+        clampedY <= box.bottom
+      ) {
+        return cell;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Reliable multi-cell drag and Shift+Click selection for tables.
+ *
+ * prosemirror-tables resolves the hovered cell via `view.posAtCoords`, which
+ * can return null or collapse to the starting cell when crossing resize handle
+ * pseudo-elements, empty cells, nested tables, or custom row node views.
+ * Resolving cells directly from DOM (`posAtDOM`) and clamping drags that go
+ * past the table edge keeps row/column selection smooth and predictable.
+ */
+export const TableCellDragSelection = Extension.create({
+  name: "tableCellDragSelection",
+  priority: 500,
+  addProseMirrorPlugins() {
+    let disposeDrag = () => undefined;
+
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            mousedown: (view, event) => {
+              if (
+                !view.editable ||
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.defaultPrevented
+              ) {
+                return false;
+              }
+
+              const target =
+                event.target instanceof Element
+                  ? event.target
+                  : event.target instanceof Node
+                    ? event.target.parentElement
+                    : null;
+              const startCell = target?.closest(
+                "td, th",
+              ) as HTMLTableCellElement | null;
+              const anchorTable = startCell?.closest(
+                "table",
+              ) as HTMLTableElement | null;
+              if (!startCell || !anchorTable || !view.dom.contains(anchorTable)) {
+                return false;
+              }
+
+              const startCellPos = cellPosFromDOM(view, startCell);
+              if (startCellPos === null) return false;
+
+              // Shift+Click extends a cell selection from the active cell.
+              if (event.shiftKey) {
+                const { selection } = view.state;
+                let anchorPos: number | null = null;
+                if (selection instanceof CellSelection) {
+                  anchorPos = selection.$anchorCell.pos;
+                } else {
+                  const $a = selection.$anchor;
+                  for (let d = $a.depth; d > 0; d -= 1) {
+                    const role = $a.node(d).type.spec.tableRole;
+                    if (role === "cell" || role === "header_cell") {
+                      anchorPos = $a.before(d);
+                      break;
+                    }
+                  }
+                }
+                if (
+                  anchorPos !== null &&
+                  anchorPos !== startCellPos &&
+                  sameTableCells(view.state.doc, anchorPos, startCellPos)
+                ) {
+                  event.preventDefault();
+                  view.dispatch(
+                    view.state.tr.setSelection(
+                      CellSelection.create(
+                        view.state.doc,
+                        anchorPos,
+                        startCellPos,
+                      ),
+                    ),
+                  );
+                  return true;
+                }
+              }
+
+              disposeDrag();
+              let selectingCells = false;
+
+              const move = (moveEvent: MouseEvent) => {
+                if (moveEvent.buttons === 0) {
+                  stop();
+                  return;
+                }
+                const currentCell = findCellInTableAtPoint(
+                  anchorTable,
+                  moveEvent.clientX,
+                  moveEvent.clientY,
+                  moveEvent.target,
+                );
+                if (!currentCell) return;
+
+                if (!selectingCells) {
+                  if (currentCell === startCell) return;
+                  selectingCells = true;
+                  window.getSelection()?.removeAllRanges();
+                }
+
+                // Prevent prosemirror-tables' own mousemove listener and native
+                // text drag from overriding the multi-cell selection.
+                moveEvent.preventDefault();
+                moveEvent.stopImmediatePropagation();
+
+                const headCellPos = cellPosFromDOM(view, currentCell);
+                if (
+                  headCellPos === null ||
+                  !sameTableCells(view.state.doc, startCellPos, headCellPos)
+                ) {
+                  return;
+                }
+
+                const nextSelection = CellSelection.create(
+                  view.state.doc,
+                  startCellPos,
+                  headCellPos,
+                );
+                if (!view.state.selection.eq(nextSelection)) {
+                  view.dispatch(view.state.tr.setSelection(nextSelection));
+                }
+              };
+
+              const stop = (upEvent?: MouseEvent) => {
+                if (selectingCells && upEvent) {
+                  upEvent.preventDefault();
+                }
+                disposeDrag();
+              };
+
+              disposeDrag = () => {
+                window.removeEventListener("mousemove", move, true);
+                window.removeEventListener("mouseup", stop, true);
+                window.removeEventListener("blur", stop);
+                disposeDrag = () => undefined;
+              };
+
+              window.addEventListener("mousemove", move, true);
+              window.addEventListener("mouseup", stop, true);
+              window.addEventListener("blur", stop);
+              return false;
+            },
+          },
+        },
+        view: () => ({
+          destroy: () => disposeDrag(),
+        }),
       }),
     ];
   },

@@ -350,6 +350,15 @@ class TestImagesLinksAndTables:
     def test_empty_paragraphs_are_collapsed(self):
         assert _html("<p>a</p><p></p><p>  </p><p>b</p>") == "<p>a</p><p>b</p>"
 
+    def test_empty_headings_are_collapsed(self):
+        assert _html("<h1>Title</h1><h1></h1><h3>  </h3><p>Body</p>") == "<h1>Title</h1><p>Body</p>"
+
+    def test_mark_highlights_become_tiptap_text_style_spans(self):
+        result = _html("<p>Check <mark>highlighted</mark> text</p>")
+        assert "<mark>" not in result
+        assert 'style="background-color: #fef08a"' in result
+        assert "highlighted" in result
+
     def test_a_paragraph_holding_only_an_image_is_kept(self):
         assert "<img" in _html('<p><img src="a.png"/></p>')
 

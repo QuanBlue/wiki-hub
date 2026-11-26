@@ -32,6 +32,7 @@ import {
 import { ResizableImage } from "./resizable-image";
 import {
   TABLE_CELL_MIN_WIDTH,
+  TableCellDragSelection,
   TableCellTripleClick,
   TableCellWithBackground,
   TableColumnResize,
@@ -112,6 +113,7 @@ export function buildEditorExtensions({
     TableCellTripleClick,
     TableColumnResize,
     TableRowResize,
+    TableCellDragSelection,
     Table.configure({
       resizable: false,
       cellMinWidth: TABLE_CELL_MIN_WIDTH,

@@ -267,6 +267,64 @@ describe("table actions", () => {
     expect((editor.getHTML().match(/<td/g) ?? []).length).toBeGreaterThan(4);
   });
 
+  it("edits table borders across the whole table and resets to default", async () => {
+    const { editor, user } = await inTable();
+
+    await user.click(screen.getByRole("button", { name: "Table borders" }));
+
+    // Switch to No border across all 4 cells
+    await user.click(await screen.findByRole("radio", { name: "No border" }));
+    expect(
+      (editor.getHTML().match(/border:\s*0px solid transparent/g) ?? []).length,
+    ).toBe(4);
+
+    // Selecting Double upgrades from "none" to "all" and bumps thin width to 3px
+    await user.click(screen.getByRole("button", { name: "Style" }));
+    await user.click(screen.getByRole("radio", { name: "Double" }));
+    expect(editor.getHTML()).toContain("border: 3px double");
+
+    // Outside borders apply per-side border declarations
+    await user.click(screen.getByRole("radio", { name: "Outside borders" }));
+    expect(editor.getHTML()).toContain("border-top: 3px double");
+    expect(editor.getHTML()).toContain("border-right: 0px solid transparent");
+
+    // Inside horizontal border applies inner row divider only
+    await user.click(
+      screen.getByRole("radio", { name: "Inside horizontal border" }),
+    );
+    expect(editor.getHTML()).toContain("border-bottom: 3px double");
+    expect(editor.getHTML()).toContain("border-left: 0px solid transparent");
+
+    // Single-edge Bottom border sets bottom on the bottom row
+    await user.click(screen.getByRole("button", { name: "Style" }));
+    await user.click(screen.getByRole("radio", { name: "Dashed" }));
+    await user.click(screen.getByRole("radio", { name: "2px" }));
+    await user.click(screen.getByRole("radio", { name: "Bottom border" }));
+    expect(editor.getHTML()).toContain("border-bottom: 2px dashed");
+
+    // Reset clears all inline border styles
+    await user.click(screen.getByRole("button", { name: "Default" }));
+    expect(editor.getHTML()).not.toContain("border");
+  });
+
+  it("scopes border edits to selected cells when a multi-cell selection is active", async () => {
+    const { editor, cells, user } = await inTable();
+
+    act(() => {
+      const { doc, tr } = editor.state;
+      editor.view.dispatch(
+        tr.setSelection(CellSelection.create(doc, cells[0]!, cells[1]!)),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Table borders" }));
+
+    await user.click(screen.getByRole("button", { name: "Style" }));
+    await user.click(screen.getByRole("radio", { name: "Dotted" }));
+    const html = editor.getHTML();
+    expect((html.match(/border:\s*1px dotted/g) ?? []).length).toBe(2);
+  });
+
   it("deletes a row and a column", async () => {
     const { editor, user, cells } = await inTable();
 

@@ -8,6 +8,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import ACCESS_COOKIE_NAME, CurrentUser, DbSession
@@ -236,6 +237,45 @@ async def export_page(
 
     result = await export_service.export(
         page=page, space=space, user=user, fmt=fmt, session=session
+    )
+    return Response(
+        content=result.content,
+        media_type=result.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{result.filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+class SlidePdfExportBody(BaseModel):
+    html: str = Field(..., min_length=1, max_length=8_000_000)
+    title: str | None = Field(default=None, max_length=255)
+
+
+@router.post(
+    "/{slug}/export/slides-pdf",
+    response_class=Response,
+    summary="Render a 16:9 presentation HTML deck (with drawings) directly to a downloadable PDF",
+)
+async def export_slides_pdf(
+    key: str,
+    slug: str,
+    body: SlidePdfExportBody,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+    export_service: ExportServiceDep,
+) -> Response:
+    space = await space_service.get_by_key(key)
+    await space_service.require_view(space, user)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    await space_service.permissions.require(space, user, Permission.export)
+
+    result = await export_service.export_slides_pdf(
+        html=body.html,
+        title=body.title or page.title,
     )
     return Response(
         content=result.content,

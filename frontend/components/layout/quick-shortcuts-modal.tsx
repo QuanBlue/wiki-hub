@@ -91,6 +91,12 @@ const SEARCH_SYNTAX_VI: CommandSyntaxItem[] = [
     type: "command",
   },
   {
+    token: ":present",
+    example: ":present",
+    description: "Biến trang đang xem thành bộ Slide thuyết trình toàn màn hình.",
+    type: "command",
+  },
+  {
     token: ":users",
     example: ":users",
     description: "Đi nhanh đến danh sách thành viên trong hệ thống.",
@@ -145,6 +151,12 @@ const SEARCH_SYNTAX_EN: CommandSyntaxItem[] = [
     token: ":chat",
     example: ":chat",
     description: "Open the interactive AI chat assistant drawer.",
+    type: "command",
+  },
+  {
+    token: ":present",
+    example: ":present",
+    description: "Present the current page as an interactive full-screen slide deck.",
     type: "command",
   },
   {

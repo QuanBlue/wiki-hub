@@ -20,7 +20,7 @@ export function SpaceTemplatesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
         <DialogContent
-          className="max-w-5xl"
+          className="flex h-[min(85vh,48rem)] max-h-[calc(100vh-4rem)] max-w-5xl flex-col overflow-hidden"
           title={t("templates.spaceTitle")}
           description={t("templates.spaceDescription", { space: space.name })}
         >

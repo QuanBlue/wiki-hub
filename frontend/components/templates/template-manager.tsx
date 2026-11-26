@@ -18,6 +18,11 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { RichTextEditor } from "@/components/pages/rich-text-editor";
+import {
+  htmlToMarkdown,
+  prettyHtml,
+} from "@/components/pages/workspace/content-transforms";
 import { TemplateIcon } from "@/components/templates/template-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +58,33 @@ const TemplatePreviewBody = dynamic(
   { ssr: false },
 );
 
-type ScopeFilter = "all" | PageTemplateScope;
+type ScopeFilter = "all" | "custom" | PageTemplateScope;
+type TemplateEditorMode = "normal" | "html" | "markdown";
+
+function matchesScopeFilter(
+  template: PageTemplate,
+  filter: ScopeFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "builtin") {
+    return template.is_builtin || template.scope === "builtin";
+  }
+  if (filter === "custom") {
+    return !template.is_builtin && template.scope !== "builtin";
+  }
+  return template.scope === filter;
+}
+
+function TemplateColGroup() {
+  return (
+    <colgroup>
+      <col />
+      <col className="hidden w-36 md:table-column" />
+      <col className="hidden w-28 sm:table-column" />
+      <col className="w-56" />
+    </colgroup>
+  );
+}
 
 interface EditorFormState {
   id: string | null;
@@ -63,6 +94,7 @@ interface EditorFormState {
   icon: string;
   content: string;
   contentFormat: PageContentFormat;
+  editorMode: TemplateEditorMode;
 }
 
 const EMPTY_FORM: EditorFormState = {
@@ -73,6 +105,7 @@ const EMPTY_FORM: EditorFormState = {
   icon: "📄",
   content: "",
   contentFormat: "html",
+  editorMode: "normal",
 };
 
 function renderPreviewHtml(content: string, format: PageContentFormat): string {
@@ -99,11 +132,14 @@ export function TemplateManager({
   const [search, setSearch] = useState("");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [viewMode, setViewMode] = useState<"list" | "grid">(
+    mode === "space" ? "grid" : "list",
+  );
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTab, setEditorTab] = useState<"write" | "preview">("write");
   const [form, setForm] = useState<EditorFormState>(EMPTY_FORM);
+  const [richEditorSeed, setRichEditorSeed] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [previewTemplate, setPreviewTemplate] = useState<PageTemplate | null>(
@@ -145,22 +181,23 @@ export function TemplateManager({
   );
 
   const scopeOptions: ScopeFilter[] = useMemo(
-    () =>
-      mode === "space"
-        ? ["all", "space", "global", "builtin"]
-        : ["all", "global", "builtin"],
-    [mode],
+    () => ["all", "custom", "builtin"],
+    [],
   );
 
   const scopeCounts = useMemo(() => {
     const counts: Record<ScopeFilter, number> = {
       all: templates.length,
+      custom: 0,
       space: 0,
       global: 0,
       builtin: 0,
     };
     for (const item of templates) {
       counts[item.scope] += 1;
+      if (!item.is_builtin && item.scope !== "builtin") {
+        counts.custom += 1;
+      }
     }
     return counts;
   }, [templates]);
@@ -168,7 +205,7 @@ export function TemplateManager({
   const categories = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of templates) {
-      if (scopeFilter !== "all" && item.scope !== scopeFilter) continue;
+      if (!matchesScopeFilter(item, scopeFilter)) continue;
       const cat = item.category.trim().toLowerCase();
       if (!cat) continue;
       map.set(cat, (map.get(cat) ?? 0) + 1);
@@ -184,7 +221,7 @@ export function TemplateManager({
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return templates.filter((item) => {
-      if (scopeFilter !== "all" && item.scope !== scopeFilter) return false;
+      if (!matchesScopeFilter(item, scopeFilter)) return false;
       if (
         activeCategory !== "all" &&
         item.category.trim().toLowerCase() !== activeCategory
@@ -202,6 +239,7 @@ export function TemplateManager({
 
   function openCreate() {
     setForm(EMPTY_FORM);
+    setRichEditorSeed((current) => current + 1);
     setEditorTab("write");
     setEditorOpen(true);
   }
@@ -215,7 +253,10 @@ export function TemplateManager({
       icon: template.icon || "📄",
       content: template.content,
       contentFormat: template.content_format,
+      editorMode:
+        template.content_format === "markdown" ? "markdown" : "normal",
     });
+    setRichEditorSeed((current) => current + 1);
     setEditorTab("write");
     setEditorOpen(true);
   }
@@ -229,10 +270,37 @@ export function TemplateManager({
       icon: template.icon || "📄",
       content: template.content,
       contentFormat: template.content_format,
+      editorMode:
+        template.content_format === "markdown" ? "markdown" : "normal",
     });
+    setRichEditorSeed((current) => current + 1);
     setPreviewTemplate(null);
     setEditorTab("write");
     setEditorOpen(true);
+  }
+
+  function handleEditorModeChange(nextMode: TemplateEditorMode) {
+    setForm((prev) => {
+      if (prev.editorMode === nextMode) return prev;
+      let nextContent = prev.content;
+      if (prev.editorMode === "markdown" && nextMode !== "markdown") {
+        const html = prev.content.trim() ? markdownToHtml(prev.content) : "";
+        nextContent = nextMode === "html" && html ? prettyHtml(html) : html;
+      } else if (prev.editorMode !== "markdown" && nextMode === "markdown") {
+        nextContent = prev.content.trim() ? htmlToMarkdown(prev.content) : "";
+      } else if (prev.editorMode === "normal" && nextMode === "html") {
+        nextContent = prev.content.trim() ? prettyHtml(prev.content) : "";
+      }
+      return {
+        ...prev,
+        content: nextContent,
+        contentFormat: nextMode === "markdown" ? "markdown" : "html",
+        editorMode: nextMode,
+      };
+    });
+    if (nextMode === "normal") {
+      setRichEditorSeed((current) => current + 1);
+    }
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -299,8 +367,9 @@ export function TemplateManager({
 
   function scopeLabel(scope: ScopeFilter): string {
     switch (scope) {
+      case "custom":
       case "space":
-        return t("templates.scopeSpace");
+        return t("templates.scopeCustom");
       case "global":
         return t("templates.scopeGlobal");
       case "builtin":
@@ -322,53 +391,106 @@ export function TemplateManager({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Single calm toolbar matching WikiHub Administration screens */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <div className="relative min-w-52 flex-1 sm:max-w-xs">
-            <Search
-              className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
-              aria-hidden
-            />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t("templates.searchPlaceholder")}
-              aria-label={t("templates.searchPlaceholder")}
-              className="pr-8 pl-8"
-            />
-            {search ? (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label={t("templates.clearSearch")}
-                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+    <div
+      className={cn(
+        "space-y-4",
+        mode === "space" && "flex min-h-0 flex-1 flex-col gap-4 space-y-0",
+      )}
+    >
+      {/* Toolbar: search, category, layout & create on top; scope options below */}
+      <div className="flex shrink-0 flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="relative min-w-52 flex-1 sm:max-w-xs">
+              <Search
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+                aria-hidden
+              />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("templates.searchPlaceholder")}
+                aria-label={t("templates.searchPlaceholder")}
+                className="pr-8 pl-8"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label={t("templates.clearSearch")}
+                  className="text-muted-foreground hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              ) : null}
+            </div>
+
+            {!loading && categories.length > 1 ? (
+              <select
+                aria-label={t("templates.categoryLabel")}
+                value={activeCategory}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className={cn(
+                  inputClassName,
+                  "h-8 w-auto min-w-36 cursor-pointer py-0 pr-7 text-xs",
+                )}
               >
-                <X className="size-3.5" aria-hidden />
-              </button>
+                <option value="all">{t("templates.allCategories")}</option>
+                {categories.map(([cat, count]) => (
+                  <option key={cat} value={cat}>
+                    {formatCategoryLabel(cat)} ({count})
+                  </option>
+                ))}
+              </select>
             ) : null}
           </div>
 
-          {!loading && categories.length > 1 ? (
-            <select
-              aria-label={t("templates.categoryLabel")}
-              value={activeCategory}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-              className={cn(
-                inputClassName,
-                "h-8 w-auto min-w-36 cursor-pointer py-0 pr-7 text-xs",
-              )}
+          <div className="flex shrink-0 items-center gap-2">
+            <div
+              role="group"
+              aria-label="View layout"
+              className="border-border bg-surface-sunken hidden items-center gap-0.5 rounded-md border p-0.5 sm:inline-flex"
             >
-              <option value="all">{t("templates.allCategories")}</option>
-              {categories.map(([cat, count]) => (
-                <option key={cat} value={cat}>
-                  {formatCategoryLabel(cat)} ({count})
-                </option>
-              ))}
-            </select>
-          ) : null}
+              <button
+                type="button"
+                aria-pressed={viewMode === "list"}
+                aria-label={t("templates.listView")}
+                title={t("templates.listView")}
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  viewMode === "list"
+                    ? "bg-surface text-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                )}
+              >
+                <List className="size-3.5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === "grid"}
+                aria-label={t("templates.gridView")}
+                title={t("templates.gridView")}
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  viewMode === "grid"
+                    ? "bg-surface text-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                )}
+              >
+                <LayoutGrid className="size-3.5" aria-hidden />
+              </button>
+            </div>
 
+            <Button type="button" variant="primary" size="sm" onClick={openCreate}>
+              <Plus aria-hidden />
+              {t("templates.newTemplate")}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center">
           <div
             role="group"
             aria-label={t("templates.scopeLabel")}
@@ -383,7 +505,7 @@ export function TemplateManager({
                   aria-pressed={selected}
                   onClick={() => setScopeFilter(option)}
                   className={cn(
-                    "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                    "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1.5 rounded px-3 py-1 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
                     selected
                       ? "bg-surface text-foreground shadow-xs"
                       : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
@@ -398,62 +520,26 @@ export function TemplateManager({
             })}
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <div
-            role="group"
-            aria-label="View layout"
-            className="border-border bg-surface-sunken hidden items-center gap-0.5 rounded-md border p-0.5 sm:inline-flex"
-          >
-            <button
-              type="button"
-              aria-pressed={viewMode === "list"}
-              aria-label={t("templates.listView")}
-              title={t("templates.listView")}
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                viewMode === "list"
-                  ? "bg-surface text-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-              )}
-            >
-              <List className="size-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              aria-pressed={viewMode === "grid"}
-              aria-label={t("templates.gridView")}
-              title={t("templates.gridView")}
-              onClick={() => setViewMode("grid")}
-              className={cn(
-                "focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                viewMode === "grid"
-                  ? "bg-surface text-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-              )}
-            >
-              <LayoutGrid className="size-3.5" aria-hidden />
-            </button>
-          </div>
-
-          <Button type="button" variant="primary" size="sm" onClick={openCreate}>
-            <Plus aria-hidden />
-            {t("templates.newTemplate")}
-          </Button>
-        </div>
       </div>
 
       {loading ? (
         <div
           role="status"
-          className="text-muted-foreground flex items-center justify-center gap-2 py-12 text-sm"
+          className={cn(
+            "text-muted-foreground flex items-center justify-center gap-2 py-12 text-sm",
+            mode === "space" && "flex-1",
+          )}
         >
           <Loader2 className="size-4 animate-spin" aria-hidden />
           {t("templates.loading")}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="border-border bg-surface-sunken flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-10 text-center">
+        <div
+          className={cn(
+            "border-border bg-surface-sunken flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-10 text-center",
+            mode === "space" && "flex-1",
+          )}
+        >
           <span className="bg-surface text-muted-foreground border-border mb-3 flex size-10 items-center justify-center rounded-full border">
             <LayoutTemplate className="size-5" aria-hidden />
           </span>
@@ -475,105 +561,94 @@ export function TemplateManager({
           </Button>
         </div>
       ) : viewMode === "list" ? (
-        <div className="border-border bg-surface overflow-x-auto rounded-xl border shadow-xs">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-border bg-surface-sunken/60 text-muted-foreground border-b text-xs font-medium">
-                <th className="px-4 py-2.5 font-medium">
+        <div
+          className={cn(
+            "border-border bg-surface overflow-hidden rounded-xl border shadow-xs",
+            mode === "space" && "flex min-h-0 flex-1 flex-col",
+          )}
+        >
+          <table className="w-full shrink-0 table-fixed border-collapse text-left text-sm">
+            <TemplateColGroup />
+            <thead className="bg-primary-subtle text-foreground border-border border-b text-xs font-bold">
+              <tr>
+                <th className="px-4 py-2.5 font-bold">
                   {t("templates.nameLabel")}
                 </th>
-                <th className="hidden px-4 py-2.5 font-medium md:table-cell">
+                <th className="hidden px-4 py-2.5 font-bold md:table-cell">
                   {t("templates.categoryLabel")}
                 </th>
-                <th className="hidden px-4 py-2.5 font-medium sm:table-cell">
+                <th className="hidden px-4 py-2.5 font-bold sm:table-cell">
                   {t("templates.scopeLabel")}
                 </th>
-                <th className="px-4 py-2.5 text-right font-medium">
+                <th className="px-4 py-2.5 text-right font-bold">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-border divide-y">
-              {filtered.map((template) => {
-                const editable = canEditTemplate(template);
-                return (
-                  <tr
-                    key={template.id}
-                    className="hover:bg-surface-hover/50 transition-colors duration-150"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span
-                          className="bg-surface-sunken border-border text-muted-foreground flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md border"
-                          aria-hidden
-                        >
-                          <TemplateIcon icon={template.icon} className="size-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewTemplate(template)}
-                            className="text-foreground hover:text-primary focus-visible:ring-ring block max-w-full cursor-pointer truncate rounded text-left text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+          </table>
+          <div
+            className={cn(
+              "overflow-x-auto",
+              mode === "space" && "min-h-0 flex-1 overflow-y-auto",
+            )}
+          >
+            <table className="w-full table-fixed border-collapse text-left text-sm">
+              <TemplateColGroup />
+              <tbody className="divide-border divide-y">
+                {filtered.map((template) => {
+                  const editable = canEditTemplate(template);
+                  return (
+                    <tr
+                      key={template.id}
+                      className="hover:bg-surface-hover/50 transition-colors duration-150"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span
+                            className="bg-surface-sunken border-border text-muted-foreground flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md border"
+                            aria-hidden
                           >
-                            {template.name}
-                          </button>
-                          {template.description ? (
-                            <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">
-                              {template.description}
-                            </p>
-                          ) : null}
+                            <TemplateIcon icon={template.icon} className="size-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewTemplate(template)}
+                              className="text-foreground hover:text-primary focus-visible:ring-ring block max-w-full cursor-pointer truncate rounded text-left text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                            >
+                              {template.name}
+                            </button>
+                            {template.description ? (
+                              <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">
+                                {template.description}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="text-muted-foreground hidden px-4 py-3 text-xs whitespace-nowrap md:table-cell">
-                      {template.category
-                        ? formatCategoryLabel(template.category)
-                        : t("templates.noCategory")}
-                    </td>
-                    <td className="hidden px-4 py-3 whitespace-nowrap sm:table-cell">
-                      <Badge variant={scopeBadgeVariant(template.scope)}>
-                        {scopeLabel(template.scope)}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-7"
-                          aria-label={`${t("templates.previewAction")} ${template.name}`}
-                          title={t("templates.previewAction")}
-                          onClick={() => setPreviewTemplate(template)}
-                        >
-                          <Eye className="size-3.5" aria-hidden />
-                        </Button>
-                        {editable ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-7"
-                              aria-label={`${t("templates.editAction")} ${template.name}`}
-                              title={t("templates.editAction")}
-                              onClick={() => openEdit(template)}
-                            >
-                              <Pencil className="size-3.5" aria-hidden />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="text-danger hover:bg-danger-bg hover:text-danger size-7"
-                              aria-label={`${t("templates.deleteAction")} ${template.name}`}
-                              title={t("templates.deleteAction")}
-                              onClick={() => setDeleteTarget(template)}
-                            >
-                              <Trash2 className="size-3.5" aria-hidden />
-                            </Button>
-                          </>
-                        ) : (
+                      </td>
+                      <td className="text-muted-foreground hidden px-4 py-3 text-xs whitespace-nowrap md:table-cell">
+                        {template.category
+                          ? formatCategoryLabel(template.category)
+                          : t("templates.noCategory")}
+                      </td>
+                      <td className="hidden px-4 py-3 whitespace-nowrap sm:table-cell">
+                        <Badge variant={scopeBadgeVariant(template.scope)}>
+                          {scopeLabel(template.scope)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            aria-label={`${t("templates.previewAction")} ${template.name}`}
+                            title={t("templates.previewAction")}
+                            onClick={() => setPreviewTemplate(template)}
+                          >
+                            <Eye className="size-3.5" aria-hidden />
+                          </Button>
                           <Button
                             type="button"
                             variant="ghost"
@@ -586,17 +661,48 @@ export function TemplateManager({
                             <Copy className="size-3.5" aria-hidden />
                             {t("templates.duplicateAction")}
                           </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          {editable ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7"
+                                aria-label={`${t("templates.editAction")} ${template.name}`}
+                                title={t("templates.editAction")}
+                                onClick={() => openEdit(template)}
+                              >
+                                <Pencil className="size-3.5" aria-hidden />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-danger hover:bg-danger-bg hover:text-danger size-7"
+                                aria-label={`${t("templates.deleteAction")} ${template.name}`}
+                                title={t("templates.deleteAction")}
+                                onClick={() => setDeleteTarget(template)}
+                              >
+                                <Trash2 className="size-3.5" aria-hidden />
+                              </Button>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={cn(
+            "grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-3",
+            mode === "space" && "wh-scroll min-h-0 flex-1 overflow-y-auto pr-1",
+          )}
+        >
           {filtered.map((template) => {
             const editable = canEditTemplate(template);
             return (
@@ -669,6 +775,18 @@ export function TemplateManager({
                     >
                       <Eye className="size-3.5" aria-hidden />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      aria-label={`${t("templates.duplicateAction")} ${template.name}`}
+                      title={t("templates.duplicateAction")}
+                      onClick={() => openDuplicate(template)}
+                    >
+                      <Copy className="size-3.5" aria-hidden />
+                      {t("templates.duplicateAction")}
+                    </Button>
 
                     {editable ? (
                       <>
@@ -695,20 +813,7 @@ export function TemplateManager({
                           <Trash2 className="size-3.5" aria-hidden />
                         </Button>
                       </>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        aria-label={`${t("templates.duplicateAction")} ${template.name}`}
-                        title={t("templates.duplicateAction")}
-                        onClick={() => openDuplicate(template)}
-                      >
-                        <Copy className="size-3.5" aria-hidden />
-                        {t("templates.duplicateAction")}
-                      </Button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -720,7 +825,7 @@ export function TemplateManager({
       {/* Create / Edit modal */}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent
-          className="max-w-3xl"
+          className="max-w-4xl"
           title={
             form.id ? t("templates.editTitle") : t("templates.createTitle")
           }
@@ -793,15 +898,15 @@ export function TemplateManager({
                 </Label>
                 <select
                   id="template-form-format"
-                  value={form.contentFormat}
+                  value={form.editorMode}
                   onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      contentFormat: event.target.value as PageContentFormat,
-                    }))
+                    handleEditorModeChange(
+                      event.target.value as TemplateEditorMode,
+                    )
                   }
                   className={inputClassName}
                 >
+                  <option value="normal">{t("templates.formatNormal")}</option>
                   <option value="html">{t("templates.formatHtml")}</option>
                   <option value="markdown">
                     {t("templates.formatMarkdown")}
@@ -857,24 +962,39 @@ export function TemplateManager({
               </div>
 
               {editorTab === "write" ? (
-                <textarea
-                  id="template-form-content"
-                  value={form.content}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      content: event.target.value,
-                    }))
-                  }
-                  className={cn(
-                    inputClassName,
-                    "min-h-56 resize-y py-2 font-mono text-xs leading-6",
-                  )}
-                  placeholder={t("templates.contentPlaceholder")}
-                  maxLength={200000}
-                />
+                form.editorMode === "normal" ? (
+                  <div className="wikihub-template-editor min-w-0">
+                    <RichTextEditor
+                      key={richEditorSeed}
+                      content={form.content}
+                      onChange={(nextHtml) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          content: nextHtml,
+                        }))
+                      }
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    id="template-form-content"
+                    value={form.content}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        content: event.target.value,
+                      }))
+                    }
+                    className={cn(
+                      inputClassName,
+                      "min-h-56 resize-y py-2 font-mono text-xs leading-6",
+                    )}
+                    placeholder={t("templates.contentPlaceholder")}
+                    maxLength={200000}
+                  />
+                )
               ) : (
-                <div className="border-border bg-surface-sunken wh-scroll min-h-56 max-h-80 overflow-y-auto rounded-md border px-4 py-3">
+                <div className="border-border bg-surface wh-scroll min-h-56 max-h-80 overflow-y-auto rounded-md border px-4 py-3">
                   {form.content.trim() ? (
                     <TemplatePreviewBody
                       content={renderPreviewHtml(
@@ -948,7 +1068,7 @@ export function TemplateManager({
                 ) : null}
               </div>
 
-              <div className="border-border bg-surface-sunken wh-scroll max-h-[55vh] min-h-40 overflow-y-auto rounded-md border px-5 py-4">
+              <div className="border-border bg-surface wh-scroll max-h-[55vh] min-h-40 overflow-y-auto rounded-md border px-5 py-4">
                 {previewTemplate.content.trim() ? (
                   <TemplatePreviewBody
                     content={renderPreviewHtml(
@@ -964,10 +1084,18 @@ export function TemplateManager({
               </div>
 
               <DialogFooter>
+                <Button
+                  type="button"
+                  variant={canEditTemplate(previewTemplate) ? "secondary" : "primary"}
+                  onClick={() => openDuplicate(previewTemplate)}
+                >
+                  <Copy aria-hidden />
+                  {t("templates.duplicateAction")}
+                </Button>
                 {canEditTemplate(previewTemplate) ? (
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="primary"
                     onClick={() => {
                       const target = previewTemplate;
                       setPreviewTemplate(null);
@@ -977,16 +1105,7 @@ export function TemplateManager({
                     <Pencil aria-hidden />
                     {t("templates.editAction")}
                   </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => openDuplicate(previewTemplate)}
-                  >
-                    <Copy aria-hidden />
-                    {t("templates.duplicateAction")}
-                  </Button>
-                )}
+                ) : null}
               </DialogFooter>
             </div>
           </DialogContent>

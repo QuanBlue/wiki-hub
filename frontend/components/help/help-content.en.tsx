@@ -64,7 +64,7 @@ export const sectionsEn: HelpSection[] = [
           <Code>updated:range</Code> (e.g. <Code>updated:&gt;2026-01</Code>).
           Search also lists <strong>app pages</strong> under <strong>Go to</strong> - type{" "}
           <Code>change password</Code> to jump to your account&apos;s password form, or{" "}
-          <Code>manage users</Code> for Administration &gt; Users. Start with <Code>:</Code> for commands: <Code>:help</Code> opens this guide (add words, as in <Code>:help change password</Code>, to search the guides), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, and <Code>:ask your question</Code> for an AI answer. Administration shortcuts
+          <Code>manage users</Code> for Administration &gt; Users. Start with <Code>:</Code> for commands: <Code>:help</Code> opens this guide (add words, as in <Code>:help change password</Code>, to search the guides), <Code>:present</Code> turns the current page into a full-screen slide presentation, <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, and <Code>:ask your question</Code> for an AI answer. Administration shortcuts
           only appear if your account may open them.
         </Callout>
 
@@ -141,6 +141,11 @@ export const sectionsEn: HelpSection[] = [
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>R</Kbd></td>
                 <td className="p-2.5">While editing - intercepted to ask <em>&ldquo;Reload site?&rdquo;</em> instead of silently discarding unsaved changes.</td>
+                <td className="p-2.5">Yes</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>Alt</Kbd> + <Kbd>P</Kbd></td>
+                <td className="p-2.5">While viewing a page or a public shared document - opens <strong>Slide Presentation Mode</strong> with automatic layouts, laser pointer (<Kbd>L</Kbd>), annotation pen (<Kbd>D</Kbd>), overview grid (<Kbd>G</Kbd>), step-by-step bullet reveal (<Kbd>B</Kbd>), and speaker notes (<Kbd>N</Kbd>).</td>
                 <td className="p-2.5">Yes</td>
               </tr>
               <tr className="hover:bg-surface-hover">

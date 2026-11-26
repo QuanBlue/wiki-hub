@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  ChevronsUpDown,
   FileUp,
   HeartPulse,
   LayoutTemplate,
+  MoreHorizontal,
   Network,
   Pencil,
   Star,
@@ -14,6 +16,19 @@ import type { CSSProperties, RefObject } from "react";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { SeasonalSidebarOverlay } from "@/components/seasonal/seasonal-sidebar-overlay";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Space, WikiPage } from "@/types/api";
@@ -189,64 +204,105 @@ export function WorkspaceSidebar({
               </nav>
             </div>
 
-            {/* Sidebar Footer: the page map for every reader, the space's Trash
-                for anyone who may delete pages here, and its content health
-                and Edit Space for its Owner or Admin. */}
+            {/* Sidebar Footer: space options menu grouping the page map for
+                every reader, Trash for anyone who may delete pages here, and
+                content health, templates, and Edit space for its Owner or
+                Admin. */}
             <div className="border-border shrink-0 border-t p-3">
-              {/* Equal-width tiles, icon over label, so the row fills the
-                  sidebar however many of the four the reader may use. */}
-              <div className="grid auto-cols-fr grid-flow-col gap-1.5">
-                {[
-                  {
-                    key: "map",
-                    icon: Network,
-                    label: t("graph.mapLink"),
-                    onClick: onOpenMap,
-                    show: true,
-                  },
-                  {
-                    key: "health",
-                    icon: HeartPulse,
-                    label: t("health.link"),
-                    onClick: onOpenHealth,
-                    show: canAdmin,
-                  },
-                  {
-                    key: "templates",
-                    icon: LayoutTemplate,
-                    label: t("templates.link"),
-                    onClick: onOpenTemplates ?? (() => undefined),
-                    show: Boolean(canAdmin && onOpenTemplates),
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    label: t("spaces.edit"),
-                    onClick: onOpenEditSpace,
-                    show: canAdmin,
-                  },
-                  {
-                    key: "trash",
-                    icon: Trash2,
-                    label: t("trash.link"),
-                    onClick: onOpenTrash,
-                    show: canUseTrash,
-                  },
-                ]
-                  .filter((action) => action.show)
-                  .map(({ key, icon: Icon, label, onClick }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      title={label}
-                      onClick={onClick}
-                      className="text-muted-foreground hover:bg-surface-selected hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex min-w-0 cursor-pointer flex-col items-center gap-1 rounded-md px-1 py-2 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden />
-                      <span className="w-full truncate text-center">{label}</span>
-                    </button>
-                  ))}
-              </div>
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("workspace.spaceOptions")}
+                    className={cn(
+                      "text-muted-foreground hover:bg-surface-selected hover:text-foreground active:bg-surface-selected",
+                      "data-[state=open]:bg-surface-selected data-[state=open]:text-foreground",
+                      "focus-visible:ring-ring flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-xs font-medium",
+                      "transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                    )}
+                  >
+                    <MoreHorizontal className="size-4 shrink-0" aria-hidden />
+                    <span className="truncate">{t("workspace.spaceOptions")}</span>
+                    <ChevronsUpDown
+                      className="ml-auto size-3.5 shrink-0 opacity-60"
+                      aria-hidden
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={18}
+                  className="min-w-44 text-sm font-medium"
+                >
+                  <TooltipProvider delayDuration={200} skipDelayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuItem onSelect={onOpenMap}>
+                          <Network aria-hidden />
+                          {t("graph.mapLink")}
+                        </DropdownMenuItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8}>
+                        {t("workspace.spaceOptionMapHint")}
+                      </TooltipContent>
+                    </Tooltip>
+                    {canAdmin ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuItem onSelect={onOpenHealth}>
+                            <HeartPulse aria-hidden />
+                            {t("health.link")}
+                          </DropdownMenuItem>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {t("workspace.spaceOptionHealthHint")}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canAdmin && onOpenTemplates ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuItem onSelect={onOpenTemplates}>
+                            <LayoutTemplate aria-hidden />
+                            {t("templates.link")}
+                          </DropdownMenuItem>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {t("workspace.spaceOptionTemplatesHint")}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canAdmin || canUseTrash ? <DropdownMenuSeparator /> : null}
+                    {canAdmin ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuItem onSelect={onOpenEditSpace}>
+                            <Pencil aria-hidden />
+                            {t("workspace.editSpace")}
+                          </DropdownMenuItem>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {t("workspace.spaceOptionEditHint")}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canUseTrash ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuItem onSelect={onOpenTrash}>
+                            <Trash2 aria-hidden />
+                            {t("trash.link")}
+                          </DropdownMenuItem>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {t("workspace.spaceOptionTrashHint")}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                  </TooltipProvider>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         ) : null}

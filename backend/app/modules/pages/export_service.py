@@ -19,7 +19,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import quote
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -188,6 +188,67 @@ class ExportService:
             content=content,
             media_type=MEDIA_TYPES[fmt],
             filename=f"{_export_filename_stem(page.title)}.{fmt.value}",
+        )
+
+    async def export_slides_pdf(
+        self,
+        *,
+        html: str,
+        title: str,
+    ) -> ExportResult:
+        """Render a self-contained 16:9 HTML slide deck (including drawn SVG overlays)
+        directly into a downloadable 1920x1080 landscape PDF via Playwright."""
+        timeout_ms = settings.export_render_timeout_seconds * 1000
+        allowed_prefixes = (
+            "about:",
+            "data:",
+            "blob:",
+            "https://fonts.googleapis.com/",
+            "https://fonts.gstatic.com/",
+            settings.frontend_internal_url.rstrip("/") + "/",
+        )
+
+        from playwright.async_api import Error as PlaywrightError
+
+        try:
+            async with self._page_renderer() as browser_page:
+                async def _filter_route(route: Any) -> None:
+                    req_url = str(route.request.url)
+                    if req_url.startswith(allowed_prefixes):
+                        await route.continue_()
+                    else:
+                        await route.abort()
+
+                await browser_page.route("**/*", _filter_route)
+                await browser_page.set_viewport_size({"width": 1920, "height": 1080})
+                await browser_page.set_content(
+                    html, wait_until="domcontentloaded", timeout=timeout_ms
+                )
+                await browser_page.emulate_media(media="print")
+                # Let fonts settle briefly without failing if offline
+                try:
+                    await browser_page.evaluate(
+                        "() => document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1200))]) : Promise.resolve()"
+                    )
+                except PlaywrightError:
+                    pass
+                content = await browser_page.pdf(
+                    width="1920px",
+                    height="1080px",
+                    print_background=True,
+                    prefer_css_page_size=True,
+                    margin={"top": "0px", "right": "0px", "bottom": "0px", "left": "0px"},
+                )
+        except PlaywrightError as exc:
+            logger.error("slides_pdf_export_error", error=str(exc))
+            raise ServiceUnavailableError(
+                "Rendering slides to PDF failed. Please try again."
+            ) from exc
+
+        return ExportResult(
+            content=content,
+            media_type="application/pdf",
+            filename=f"{_export_filename_stem(title, fallback='presentation')}-slides.pdf",
         )
 
     @staticmethod

@@ -1542,14 +1542,35 @@ export interface PublicShareView {
 
 export type StatsRange = "7d" | "30d" | "90d";
 
+export interface StatsDateQuery {
+  range?: StatsRange;
+  start?: string;
+  end?: string;
+}
+
+export interface StatsOverviewPrevious {
+  new_users: number;
+  active_users: number;
+  new_spaces: number;
+  new_pages: number;
+  edits: number;
+  views: number;
+  daily_active_users: number;
+  active_seconds: number;
+}
+
 export interface StatsOverview {
   range_days: number;
+  start_date?: string;
+  end_date?: string;
   totals: {
     users: number;
     new_users: number;
     active_users: number;
     spaces: number;
+    new_spaces?: number;
     pages: number;
+    new_pages?: number;
     edits: number;
     views: number;
     /** Average people active per day, over the days activity was tracked. */
@@ -1557,6 +1578,7 @@ export interface StatsOverview {
     /** Average seconds one active person spent in the app on a day. */
     active_seconds: number;
   };
+  previous?: StatsOverviewPrevious;
   daily: Array<{
     day: string;
     edits: number;
@@ -1579,8 +1601,18 @@ export interface StatsOverview {
   activity_tracked_since: string | null;
 }
 
+export interface StatsAiPrevious {
+  tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  calls: number;
+  users: number;
+}
+
 export interface StatsAi {
   range_days: number;
+  start_date?: string;
+  end_date?: string;
   totals: {
     tokens: number;
     prompt_tokens: number;
@@ -1588,7 +1620,14 @@ export interface StatsAi {
     calls: number;
     users: number;
   };
-  daily: Array<{ day: string; tokens: number; calls: number }>;
+  previous?: StatsAiPrevious;
+  daily: Array<{
+    day: string;
+    tokens: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    calls: number;
+  }>;
   by_user: Array<{
     user_id: string | null;
     username: string;
@@ -1597,6 +1636,7 @@ export interface StatsAi {
     calls: number;
   }>;
   by_feature: Array<{ feature: string; tokens: number; calls: number }>;
+  by_model?: Array<{ model: string; tokens: number; calls: number }>;
   tracked_since: string | null;
 }
 
@@ -1611,12 +1651,31 @@ export interface StatsTopItem {
   stars: number;
   /** Null for a space, which cannot be saved. */
   saves: number | null;
+  /** Total active pages inside a space; null for pages. */
+  page_count?: number | null;
 }
 
 export interface StatsTopContent {
   range_days: number;
+  start_date?: string;
+  end_date?: string;
   sort: string;
   items: StatsTopItem[];
+}
+
+export interface StatsContributorItem {
+  user_id: string | null;
+  username: string;
+  full_name: string | null;
+  edits: number;
+  pages_created: number;
+}
+
+export interface StatsTopContributors {
+  range_days: number;
+  start_date?: string;
+  end_date?: string;
+  items: StatsContributorItem[];
 }
 
 /** What deleting a page did: it went to the space's Trash, from where `id` restores it. */

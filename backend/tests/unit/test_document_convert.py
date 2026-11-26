@@ -163,11 +163,14 @@ class TestDocxTableFormatting:
         assert 'width: 54.7624%' in result
         assert 'background-color: #2f5496' in result
         assert 'vertical-align: middle' in result
-        assert 'border: 1px solid #000000' in result
+        assert 'border-top: 1px solid #000000' in result
+        assert 'border-right: 0px solid transparent' in result
         assert 'text-align: center' in result
         assert 'color: #e7e6e6' in result
 
-    def _enrich(self, tmp_path, document_xml: str, html: str) -> str:
+    def _enrich(
+        self, tmp_path, document_xml: str, html: str, styles_xml: str | None = None
+    ) -> str:
         source = tmp_path / "styled.docx"
         with zipfile.ZipFile(source, "w") as archive:
             archive.writestr(
@@ -176,6 +179,13 @@ class TestDocxTableFormatting:
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/'
                 'wordprocessingml/2006/main"><w:body>' + document_xml + "</w:body></w:document>",
             )
+            if styles_xml is not None:
+                archive.writestr(
+                    "word/styles.xml",
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/'
+                    'wordprocessingml/2006/main">' + styles_xml + "</w:styles>",
+                )
         return convert._enrich_docx_table_formatting(html, source)
 
     def test_a_leading_run_less_paragraph_does_not_shift_later_lines(self, tmp_path):
@@ -260,6 +270,148 @@ class TestDocxTableFormatting:
 
         assert "<p style=" not in result
         assert result.count('<span style="color: #ff0000">') == 2
+
+    def test_borderless_layout_table_gets_transparent_borders_and_demotes_header(self, tmp_path):
+        document = (
+            "<w:tbl><w:tblPr><w:tblBorders>"
+            '<w:top w:val="none" w:sz="0" w:color="auto"/>'
+            '<w:left w:val="none" w:sz="0" w:color="auto"/>'
+            '<w:bottom w:val="none" w:sz="0" w:color="auto"/>'
+            '<w:right w:val="none" w:sz="0" w:color="auto"/>'
+            '<w:insideH w:val="none" w:sz="0" w:color="auto"/>'
+            '<w:insideV w:val="none" w:sz="0" w:color="auto"/>'
+            "</w:tblBorders></w:tblPr>"
+            '<w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid>'
+            "<w:tr><w:tc><w:p><w:r><w:t>Left</w:t></w:r></w:p></w:tc>"
+            "<w:tc><w:p><w:r><w:t>Right</w:t></w:r></w:p></w:tc></w:tr>"
+            "<w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>"
+            "<w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr>"
+            "</w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path,
+            document,
+            "<table><thead><tr><th>Left</th><th>Right</th></tr></thead>"
+            "<tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
+        )
+        soup = BeautifulSoup(result, "html.parser")
+        assert soup.find("th") is None
+        assert soup.find("thead") is None
+        cells = soup.find_all("td")
+        assert len(cells) == 4
+        assert all("border: 0px solid transparent" in c["style"] for c in cells)
+
+    def test_table_style_borders_and_per_side_double_and_diagonal_borders(self, tmp_path):
+        styles = (
+            '<w:style w:type="table" w:styleId="TableGrid"><w:tblPr><w:tblBorders>'
+            '<w:top w:val="single" w:sz="4" w:color="auto"/>'
+            '<w:left w:val="single" w:sz="4" w:color="auto"/>'
+            '<w:bottom w:val="single" w:sz="4" w:color="auto"/>'
+            '<w:right w:val="single" w:sz="4" w:color="auto"/>'
+            '<w:insideH w:val="single" w:sz="4" w:color="auto"/>'
+            '<w:insideV w:val="single" w:sz="4" w:color="auto"/>'
+            "</w:tblBorders></w:tblPr></w:style>"
+        )
+        document = (
+            '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid>'
+            "<w:tr>"
+            '<w:tc><w:tcPr><w:tcBorders>'
+            '<w:top w:val="double" w:sz="6" w:color="000000"/>'
+            '<w:tl2br w:val="single" w:sz="8" w:color="FF0000"/>'
+            "</w:tcBorders></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>"
+            '<w:tc><w:tcPr><w:tcBorders>'
+            '<w:left w:val="nil"/>'
+            '<w:tr2bl w:val="dashed" w:sz="12" w:color="0000FF"/>'
+            "</w:tcBorders></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>"
+            "</w:tr></w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path,
+            document,
+            "<table><tr><td>A</td><td>B</td></tr></table>",
+            styles_xml=styles,
+        )
+        cells = BeautifulSoup(result, "html.parser").find_all("td")
+        assert "border-top: 3px double #000000" in cells[0]["style"]
+        assert "border-right: 1px solid var(--border-strong)" in cells[0]["style"]
+        assert cells[0]["data-diagonal-down"] == "1px solid #ff0000"
+        # Shared-edge reconciliation: B's `left: nil` adopts A's visible right edge,
+        # so all 4 sides collapse to the uniform shorthand.
+        assert "border: 1px solid var(--border-strong)" in cells[1]["style"]
+        assert cells[1]["data-diagonal-up"] == "2px dashed #0000ff"
+
+    def test_vmerge_continuation_cells_do_not_shift_row_widths_or_bottom_border(self, tmp_path):
+        document = (
+            "<w:tbl><w:tblPr><w:tblBorders>"
+            '<w:top w:val="single" w:sz="4" w:color="000000"/>'
+            '<w:left w:val="single" w:sz="4" w:color="000000"/>'
+            '<w:bottom w:val="double" w:sz="6" w:color="000000"/>'
+            '<w:right w:val="single" w:sz="4" w:color="000000"/>'
+            '<w:insideH w:val="single" w:sz="4" w:color="000000"/>'
+            '<w:insideV w:val="single" w:sz="4" w:color="000000"/>'
+            "</w:tblBorders></w:tblPr>"
+            '<w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="8000"/></w:tblGrid>'
+            "<w:tr>"
+            '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>'
+            "<w:tc><w:p><w:r><w:t>First</w:t></w:r></w:p></w:tc>"
+            "</w:tr>"
+            "<w:tr>"
+            "<w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>"
+            '<w:tc><w:tcPr><w:shd w:fill="DEEAF6"/></w:tcPr><w:p><w:r><w:t>Second</w:t></w:r></w:p></w:tc>'
+            "</w:tr></w:tbl>"
+        )
+        # Pandoc omits the continuation `<w:tc>` from row 2 because row 1's cell has rowspan=2.
+        result = self._enrich(
+            tmp_path,
+            document,
+            '<table><tr><td rowspan="2">1</td><td>First</td></tr>'
+            "<tr><td>Second</td></tr></table>",
+        )
+        rows = BeautifulSoup(result, "html.parser").find_all("tr")
+        merged_cell = rows[0].find_all("td")[0]
+        second_cell = rows[1].find_all("td")[0]
+        # Row 2's cell must get column 1's width (80%) and shading, not column 0's (20%).
+        assert "width: 80.0000%" in second_cell["style"]
+        assert "background-color: #deeaf6" in second_cell["style"]
+        # The vertically merged cell spans to the last row so it gets the table's double bottom border.
+        assert "border-bottom: 3px double #000000" in merged_cell["style"]
+
+    def test_trailing_double_spaces_do_not_trigger_monospace_rebuild(self, tmp_path):
+        document = (
+            '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/>'
+            '<w:p><w:r><w:t xml:space="preserve">Ubuntu 24.04 LTS  </w:t></w:r></w:p>'
+            "</w:tc></w:tr></w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path, document, "<table><tr><td><p><strong>Ubuntu 24.04 LTS</strong></p></td></tr></table>"
+        )
+        assert "ui-monospace" not in result
+        assert "<strong>Ubuntu 24.04 LTS</strong>" in result
+
+    def test_body_paragraph_alignment_and_non_black_color_are_preserved(self, tmp_path):
+        styles = (
+            '<w:style w:type="paragraph" w:styleId="BodyJustified">'
+            '<w:pPr><w:jc w:val="both"/></w:pPr></w:style>'
+        )
+        document = (
+            '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+            '<w:r><w:rPr><w:color w:val="2F5496"/></w:rPr><w:t>Centered Title</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="BodyJustified"/></w:pPr>'
+            '<w:r><w:rPr><w:color w:val="000000"/></w:rPr><w:t>Justified prose.</w:t></w:r></w:p>'
+        )
+        result = self._enrich(
+            tmp_path,
+            document,
+            "<p>Centered Title</p><p>Justified prose.</p>",
+            styles_xml=styles,
+        )
+        paragraphs = BeautifulSoup(result, "html.parser").find_all("p")
+        assert "text-align: center" in paragraphs[0]["style"]
+        assert '<span style="color: #2f5496">Centered Title</span>' in str(paragraphs[0])
+        assert "text-align: justify" in paragraphs[1]["style"]
+        # Pure black on unshaded body prose is omitted so dark mode stays readable.
+        assert "#000000" not in str(paragraphs[1])
 
 
 class TestHtmlTableFormatting:

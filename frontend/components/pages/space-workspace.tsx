@@ -27,6 +27,8 @@ import { getFontFamilyCss } from "@/lib/font-presets";
 import { findHomePage } from "@/lib/home-page";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDate } from "@/lib/i18n/format";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
+import { PRESENT_OPEN_EVENT } from "@/lib/page-presentation";
 import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
 import { usePagePresence } from "@/lib/use-page-presence";
 import { cn } from "@/lib/utils";
@@ -152,6 +154,7 @@ export function SpaceWorkspace({
   });
   const [likePending, setLikePending] = useState(false);
   const [shareCount, setShareCount] = useState(0);
+  const [presentOpen, setPresentOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [publicShareDialogOpen, setPublicShareDialogOpen] = useState(false);
@@ -261,6 +264,37 @@ export function SpaceWorkspace({
     window.addEventListener(TRASH_OPEN_EVENT, open);
     return () => window.removeEventListener(TRASH_OPEN_EVENT, open);
   }, [space.key]);
+
+  // ":present" in the search box or the rebindable "page.present" shortcut starts presentation mode.
+  useEffect(() => {
+    const openPresent = () => {
+      if (!editor.editing && !editor.overviewEditing) {
+        setPresentOpen(true);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || editor.editing || editor.overviewEditing) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (matchesShortcut("page.present", event)) {
+        event.preventDefault();
+        setPresentOpen(true);
+      }
+    };
+    window.addEventListener(PRESENT_OPEN_EVENT, openPresent);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(PRESENT_OPEN_EVENT, openPresent);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editor.editing, editor.overviewEditing]);
 
   // "Edit space" (this button, and the modal it opens) is full space
   // administration - visibility, member permissions, archiving, deletion -
@@ -750,6 +784,7 @@ export function SpaceWorkspace({
             viewFullWidth={viewFullWidth}
             setViewFullWidth={setViewFullWidth}
             related={related}
+            onOpenPresent={() => setPresentOpen(true)}
             onOpenSummary={() => setSummaryOpen(true)}
             onOpenShareDialog={() => setShareDialogOpen(true)}
             onOpenPublicShareDialog={() => setPublicShareDialogOpen(true)}
@@ -930,6 +965,9 @@ export function SpaceWorkspace({
             setMovePageOpen={setMovePageOpen}
             pageAccessOpen={pageAccessOpen}
             setPageAccessOpen={setPageAccessOpen}
+            presentOpen={presentOpen}
+            setPresentOpen={setPresentOpen}
+            pageLabels={pageLabels}
             summaryOpen={summaryOpen}
             setSummaryOpen={setSummaryOpen}
             shareDialogOpen={shareDialogOpen}
