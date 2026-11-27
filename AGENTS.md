@@ -130,3 +130,11 @@ The container then restart-loops until `run.sh` gives up with
 The frontend service therefore runs `rm -f /app/.next/dev/lock` before
 `npm run dev:docker`. Nothing can legitimately hold that lock at the moment
 the container starts, so removing it is always safe. Do not drop that step.
+
+## Git push and CI/CD verification
+
+After every `git push` in this project, always check GitHub Actions (for example
+via `gh run list --limit 5` and `gh run watch` / `gh run view`) to confirm that
+all triggered CI/CD workflows (such as `Release images` and `Pages`) complete
+successfully. If a run fails, inspect the failed job logs, fix the root cause,
+push the fix, and re-check until CI/CD passes.

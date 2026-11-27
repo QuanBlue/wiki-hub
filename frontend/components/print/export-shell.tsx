@@ -137,7 +137,7 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
         });
       });
 
-    const decodeLateImages = () => {
+    const decodeLateImages = (): Promise<void> => {
       const lateImages = Array.from(
         rootRef.current?.querySelectorAll("img") ?? [],
       ).filter((img) => !images.includes(img));
@@ -146,7 +146,7 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
         lateImages.map((img) =>
           img.complete ? Promise.resolve() : img.decode().catch(() => undefined),
         ),
-      );
+      ).then(() => undefined);
     };
 
     Promise.all([
