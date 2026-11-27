@@ -242,39 +242,45 @@ describe("FeatureDiscovery sliding carousel", () => {
     }
   });
 
-  it("opens newly added AI chat, templates, import, and 2FA guides", () => {
+  it("opens newly added AI chat, templates, import, 2FA, and profile guides with real screenshots", () => {
     const chatListener = vi.fn();
     window.addEventListener(CHAT_OPEN_EVENT, chatListener);
     try {
       render(<FeatureDiscovery />);
 
-      // Slide 16 (index 15): AI Chat with direct action and themed UI preview
+      // Slide 16 (index 15): AI Chat with direct action and real screenshot
       fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[15]);
-      expect(screen.getByText("WikiHub feature preview")).toBeInTheDocument();
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.className).toContain("top-1/2");
+      expect(dialog.className).toContain("-translate-y-1/2");
+      expect(dialog.className).toContain("h-[min(660px,88vh)]");
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/feature-discovery/ai-chat.png");
+      expect(screen.getByText("Real screenshot from WikiHub (sample data)")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Open AI Chat/i }));
       expect(chatListener).toHaveBeenCalledOnce();
 
-      // Slide 21 (index 20): Import documents with real screenshot from /help/
-      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[20]);
-      expect(screen.getByRole("img")).toHaveAttribute("src", "/help/import-dialog.png");
+      // Slide 20 (index 19): Page Templates with real screenshot
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[19]);
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/feature-discovery/page-templates.png");
       fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
-      // Slide 23 (index 22): 2FA links to /account
+      // Slide 21 (index 20): Import documents with real screenshot
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[20]);
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/feature-discovery/import-documents.png");
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+      // Slide 23 (index 22): 2FA with real screenshot and link to /account
       fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[22]);
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/feature-discovery/two-factor-auth.png");
       expect(screen.getByRole("link", { name: "Account security" })).toHaveAttribute("href", "/account");
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+      // Slide 24 (index 23): Profile & Welcome effects with real screenshot
+      fireEvent.click(screen.getAllByRole("button", { name: /See how it works/i })[23]);
+      expect(screen.getByRole("img")).toHaveAttribute("src", "/feature-discovery/profile-personalization.png");
     } finally {
       window.removeEventListener(CHAT_OPEN_EVENT, chatListener);
     }
-  });
-
-  it("renders Vietnamese preview copy for non-screenshot guides", () => {
-    render(
-      <LocaleProvider initialLocale="vi">
-        <FeatureDiscovery />
-      </LocaleProvider>,
-    );
-    fireEvent.click(screen.getAllByRole("button", { name: /Xem cách dùng/i })[19]);
-    expect(screen.getByText("Minh họa tính năng WikiHub")).toBeInTheDocument();
   });
 
   it("moves the slides with the speed of the scroll over the carousel", () => {

@@ -121,7 +121,7 @@ async () => {
 
   return (
     '<!doctype html>\n' +
-    '<html lang="en" class="' + htmlClass + '" style="' + htmlStyle + '">\n' +
+    '<html lang="en" data-export="true" class="' + htmlClass + '" style="' + htmlStyle + '">\n' +
     '<head><meta charset="utf-8"><title>' + title + '</title>' +
     '<style>' + css + '</style></head>\n' +
     '<body>' + rootClone.outerHTML + '</body>\n' +

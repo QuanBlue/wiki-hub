@@ -167,28 +167,33 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
         } as CSSProperties)
       : undefined;
 
+  const startsWithCoverFrame = /^\s*<table\b[\s\S]*?<table\b/i.test(
+    bundle.page.content || "",
+  );
+
   return (
     <div
       ref={rootRef}
       data-export-root
       className={
         // A PDF is a fixed physical page - a comfortable, book-like reading
-        // column is correct there. A standalone HTML file, opened in an
-        // ordinary browser window, has no such page: capped to the same
-        // narrow column, it renders as a sliver down the middle of the
-        // window rather than using the width the reader actually has.
+        // column is correct there. A standalone HTML file uses a wider,
+        // centered publication width so wide tables breathe without stretching
+        // prose across ultrawide monitors.
         bundle.fmt === "html"
-          ? "mx-auto w-full max-w-none px-10 py-10"
+          ? "mx-auto w-full max-w-[1040px] px-10 py-10"
           : "mx-auto max-w-4xl px-10 py-10"
       }
       style={spaceFontStyle}
     >
-      <h1
-        className="border-border mb-6 border-b pb-3 text-3xl font-bold"
-        style={{ fontFamily: "var(--font-page)" }}
-      >
-        {bundle.page.title}
-      </h1>
+      {!startsWithCoverFrame && (
+        <h1
+          className="border-border mb-6 border-b pb-3 text-3xl font-bold"
+          style={{ fontFamily: "var(--font-page)" }}
+        >
+          {bundle.page.title}
+        </h1>
+      )}
       <RichTextContent
         content={bundle.page.content}
         exportMode

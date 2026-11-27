@@ -50,6 +50,16 @@ import { toast } from "sonner";
 export type DiagramLook = "classic" | "handDrawn";
 export type DiagramAlignment = "left" | "center" | "right";
 
+// Serialize mermaid.initialize + mermaid.render calls across multiple diagram
+// blocks on the same page so they don't overwrite each other's global config.
+let mermaidRenderQueue: Promise<void> = Promise.resolve();
+
+function cleanupMermaidTempNodes(elementId: string) {
+  if (typeof document === "undefined") return;
+  document.getElementById(`d${elementId}`)?.remove();
+  document.getElementById(elementId)?.remove();
+}
+
 export const DEFAULT_MERMAID_CODE = `flowchart TD
     A[Bắt đầu] --> B{Điều kiện?}
     B -- Đúng --> C[Xử lý tác vụ]
@@ -577,67 +587,80 @@ export function DiagramBlockComponent({
       const currentSeq = ++renderSeqRef.current;
       setIsRendering(true);
 
-      try {
-        const mermaidModule = await import("mermaid");
-        const mermaid = mermaidModule.default;
+      const elementId = `mermaid_${uniqueId}_${currentSeq}`;
 
-        const themeVars = darkMode
-          ? {
-              darkMode: true,
-              background: "#1f2330",
-              mainBkg: "#272c3b",
-              nodeBorder: "#363d50",
-              primaryColor: "#272c3b",
-              primaryTextColor: "#f1f5f9",
-              primaryBorderColor: "#444d64",
-              lineColor: "#8b949e",
-              secondaryColor: "#191c27",
-              tertiaryColor: "#2f3546",
-              fontFamily: "var(--font-sans, inherit)",
+      const executeRender = async () => {
+        if (currentSeq !== renderSeqRef.current) return;
+
+        try {
+          const mermaidModule = await import("mermaid");
+          const mermaid = mermaidModule.default;
+
+          const themeVars = darkMode
+            ? {
+                darkMode: true,
+                background: "#1f2330",
+                mainBkg: "#272c3b",
+                nodeBorder: "#363d50",
+                primaryColor: "#272c3b",
+                primaryTextColor: "#f1f5f9",
+                primaryBorderColor: "#444d64",
+                lineColor: "#8b949e",
+                secondaryColor: "#191c27",
+                tertiaryColor: "#2f3546",
+                edgeLabelBackground: "#1f2330",
+                fontFamily: "var(--font-sans, inherit)",
+              }
+            : {
+                darkMode: false,
+                background: "#ffffff",
+                mainBkg: "#f7f8fa",
+                nodeBorder: "#cbd1da",
+                primaryColor: "#f7f8fa",
+                primaryTextColor: "#161b24",
+                primaryBorderColor: "#9aa3b2",
+                lineColor: "#6b7484",
+                secondaryColor: "#ffffff",
+                tertiaryColor: "#eef0f4",
+                edgeLabelBackground: "#ffffff",
+                fontFamily: "var(--font-sans, inherit)",
+              };
+
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: "loose",
+            suppressErrorRendering: true,
+            theme: darkMode ? "dark" : "base",
+            themeVariables: themeVars,
+            look: currentLook === "handDrawn" ? "handDrawn" : "classic",
+            fontFamily: "var(--font-sans, inherit)",
+          });
+
+          const cleanCode = codeToRender.trim() || "flowchart TD\n  Empty[Trống]";
+          const { svg } = await mermaid.render(elementId, cleanCode);
+
+          if (currentSeq !== renderSeqRef.current) return;
+
+          setSvgOutput(svg);
+          setRenderError(null);
+        } catch (err: unknown) {
+          if (currentSeq !== renderSeqRef.current) return;
+          const msg = err instanceof Error ? err.message : String(err);
+          setRenderError(msg);
+        } finally {
+          cleanupMermaidTempNodes(elementId);
+          if (currentSeq === renderSeqRef.current) {
+            setIsRendering(false);
+            if (containerRef.current) {
+              containerRef.current.dataset.diagramPending = "false";
             }
-          : {
-              darkMode: false,
-              background: "#ffffff",
-              mainBkg: "#f7f8fa",
-              nodeBorder: "#cbd1da",
-              primaryColor: "#f7f8fa",
-              primaryTextColor: "#161b24",
-              primaryBorderColor: "#9aa3b2",
-              lineColor: "#6b7484",
-              secondaryColor: "#ffffff",
-              tertiaryColor: "#eef0f4",
-              fontFamily: "var(--font-sans, inherit)",
-            };
-
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "loose",
-          theme: darkMode ? "dark" : "base",
-          themeVariables: themeVars,
-          look: currentLook === "handDrawn" ? "handDrawn" : "classic",
-          fontFamily: "var(--font-sans, inherit)",
-        });
-
-        const elementId = `mermaid_${uniqueId}_${currentSeq}`;
-        const cleanCode = codeToRender.trim() || "flowchart TD\n  Empty[Trống]";
-        const { svg } = await mermaid.render(elementId, cleanCode);
-
-        if (currentSeq !== renderSeqRef.current) return;
-
-        setSvgOutput(svg);
-        setRenderError(null);
-      } catch (err: unknown) {
-        if (currentSeq !== renderSeqRef.current) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setRenderError(msg);
-      } finally {
-        if (currentSeq === renderSeqRef.current) {
-          setIsRendering(false);
-          if (containerRef.current) {
-            containerRef.current.dataset.diagramPending = "false";
           }
         }
-      }
+      };
+
+      const nextRun = mermaidRenderQueue.then(executeRender, executeRender);
+      mermaidRenderQueue = nextRun.catch(() => {});
+      await nextRun;
     },
     [uniqueId],
   );
@@ -977,7 +1000,7 @@ export function DiagramBlockComponent({
             maxWidth: "100%",
           }}
           className={cn(
-            "relative flex flex-col transition-all",
+            "relative flex flex-col transition-colors duration-150",
             alignment === "center" && "mx-auto",
             alignment === "left" && "mr-auto ml-0",
             alignment === "right" && "ml-auto mr-0",
@@ -1000,7 +1023,7 @@ export function DiagramBlockComponent({
                 onClick={() => setIsFullscreen(true)}
                 onContextMenu={handleContextMenu}
                 title="Nhấp để phóng to • Chuột phải để sao chép ảnh PNG"
-                className="mermaid-render-output flex w-full cursor-zoom-in justify-center overflow-x-auto [&>svg]:max-w-full [&>svg]:h-auto transition-transform hover:scale-[1.005]"
+                className="mermaid-render-output [--mermaid-label-bg:var(--background)] flex w-full cursor-zoom-in justify-center overflow-x-auto [&>svg]:max-w-full [&>svg]:h-auto transition-transform hover:scale-[1.005]"
                 dangerouslySetInnerHTML={{ __html: svgOutput }}
               />
             ) : null}
@@ -1141,7 +1164,7 @@ export function DiagramBlockComponent({
           maxWidth: "100%",
         }}
         className={cn(
-          "relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-all",
+          "relative flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-colors duration-150",
           alignment === "center" && "mx-auto",
           alignment === "left" && "mr-auto ml-0",
           alignment === "right" && "ml-auto mr-0",
@@ -1329,9 +1352,9 @@ export function DiagramBlockComponent({
         <div
           contentEditable={false}
           className={cn(
-            "relative grid min-h-[160px] transition-all",
+            "relative grid min-h-[200px]",
             viewMode === "split"
-              ? "grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border"
+              ? "grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border md:h-[420px]"
               : "grid-cols-1",
           )}
         >
@@ -1344,7 +1367,7 @@ export function DiagramBlockComponent({
             title="Kéo sang hai bên để thu hẹp hoặc mở rộng"
             className="group/handle absolute inset-y-0 left-0 z-20 flex w-3 cursor-ew-resize items-center justify-center hover:bg-primary/20 active:bg-primary/40 transition-colors"
           >
-            <div className="h-8 w-1 rounded-full bg-border/80 group-hover/handle:bg-primary transition-colors" />
+            <div className="h-8 w-1 rounded-full bg-border/80 opacity-60 group-hover/diagram:opacity-100 group-hover/handle:bg-primary transition-colors" />
           </div>
           <div
             onPointerDown={(e) => {
@@ -1354,11 +1377,11 @@ export function DiagramBlockComponent({
             title="Kéo sang hai bên để thu hẹp hoặc mở rộng"
             className="group/handle absolute inset-y-0 right-0 z-20 flex w-3 cursor-ew-resize items-center justify-center hover:bg-primary/20 active:bg-primary/40 transition-colors"
           >
-            <div className="h-8 w-1 rounded-full bg-border/80 group-hover/handle:bg-primary transition-colors" />
+            <div className="h-8 w-1 rounded-full bg-border/80 opacity-60 group-hover/diagram:opacity-100 group-hover/handle:bg-primary transition-colors" />
           </div>
           {/* Code Editor Pane (shown in Split or Code mode) */}
           {(viewMode === "code" || viewMode === "split") && (
-            <div className="flex flex-col bg-surface-sunken/50 p-2">
+            <div className="flex min-h-0 flex-col bg-surface-sunken/50 px-4 py-2.5">
               <div className="mb-1.5 flex items-center justify-between px-1 text-[11px] font-mono text-muted-foreground">
                 <span>Mermaid syntax</span>
                 <span>Tab: indent</span>
@@ -1371,16 +1394,24 @@ export function DiagramBlockComponent({
                 spellCheck={false}
                 placeholder="Gõ mã Mermaid tại đây..."
                 rows={Math.max(8, codeDraft.split("\n").length + 1)}
-                className="w-full flex-1 resize-y rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                className={cn(
+                  "w-full flex-1 rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
+                  viewMode === "split" ? "min-h-[200px] resize-none overflow-y-auto" : "resize-y",
+                )}
               />
             </div>
           )}
 
           {/* Live Preview Pane (shown in Preview or Split mode) */}
           {(viewMode === "preview" || viewMode === "split") && (
-            <div className="relative flex flex-col items-center justify-center overflow-x-auto bg-card p-4">
+            <div
+              className={cn(
+                "relative flex min-h-0 flex-col items-center overflow-auto bg-card px-5 py-4",
+                viewMode === "preview" && "max-h-[560px]",
+              )}
+            >
               {renderError ? (
-                <div className="flex w-full flex-col gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+                <div className="my-auto flex w-full flex-col gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <AlertTriangle className="size-4 shrink-0" aria-hidden />
                     <span>{t("editor.diagramSyntaxError")}</span>
@@ -1394,11 +1425,11 @@ export function DiagramBlockComponent({
                   onClick={() => setIsFullscreen(true)}
                   onContextMenu={handleContextMenu}
                   title="Nhấp để phóng to • Chuột phải để sao chép ảnh PNG"
-                  className="mermaid-render-output flex w-full cursor-zoom-in justify-center overflow-x-auto [&>svg]:max-w-full [&>svg]:h-auto transition-transform hover:scale-[1.005]"
+                  className="mermaid-render-output [--mermaid-label-bg:var(--card)] my-auto flex w-full cursor-zoom-in justify-center [&>svg]:max-w-full [&>svg]:h-auto transition-transform hover:scale-[1.005]"
                   dangerouslySetInnerHTML={{ __html: svgOutput }}
                 />
               ) : (
-                <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">
+                <div className="my-auto flex h-32 items-center justify-center text-xs text-muted-foreground">
                   <span>{t("editor.editorPlaceholder")}</span>
                 </div>
               )}

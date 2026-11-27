@@ -684,7 +684,7 @@ class TestHtmlTableStyles:
         styled_bdr = tbl.rows[0].cells[0]._tc.tcPr.find(qn("w:tcBorders"))
         assert styled_bdr is not None
         assert styled_bdr.find(qn("w:top")).get(qn("w:val")) == "double"
-        assert styled_bdr.find(qn("w:top")).get(qn("w:sz")) == "18"
+        assert styled_bdr.find(qn("w:top")).get(qn("w:sz")) == "6"
         assert styled_bdr.find(qn("w:top")).get(qn("w:color")) == "216fc0"
         assert styled_bdr.find(qn("w:bottom")).get(qn("w:val")) == "dashed"
         assert styled_bdr.find(qn("w:bottom")).get(qn("w:sz")) == "12"
@@ -700,6 +700,54 @@ class TestHtmlTableStyles:
         assert none_bdr is not None
         for edge in ("top", "left", "bottom", "right"):
             assert none_bdr.find(qn(f"w:{edge}")).get(qn("w:val")) == "nil"
+
+    def test_styles_nested_cover_tables_row_heights_and_per_paragraph_alignment(self) -> None:
+        document = Document()
+        outer = document.add_table(rows=1, cols=1)
+        outer_cell = outer.rows[0].cells[0]
+        nested = outer_cell.add_table(rows=1, cols=2)
+        nested.rows[0].cells[0].paragraphs[0].add_run("Left Header")
+        # Seed duplicate `w:jc` elements as Pandoc does on nested table cells.
+        for _ in range(2):
+            jc = OxmlElement("w:jc")
+            jc.set(qn("w:val"), "left")
+            nested.rows[0].cells[0].paragraphs[0]._p.get_or_add_pPr().append(jc)
+        p_title = outer_cell.paragraphs[0]
+        p_title.add_run("COVER TITLE")
+        second_tbl = document.add_table(rows=1, cols=2)
+        second_tbl.rows[0].cells[0].text = "STT"
+
+        html = (
+            '<table><tbody><tr><td style="text-align: left; border: 4px double var(--foreground)">'
+            '<table style="width: 100%"><tbody><tr style="height: 80px">'
+            '<td style="text-align: center; width: 55%; border: 0px solid transparent">Left Header</td>'
+            '<td style="text-align: center; width: 45%; border: 0px solid transparent">Right Header</td>'
+            "</tr></tbody></table>"
+            '<p style="text-align: center"><span style="font-size: 25px">COVER TITLE</span></p>'
+            "</td></tr></tbody></table>"
+            "<table><tbody><tr><td>STT</td><td>Desc</td></tr></tbody></table>"
+        )
+        export_docx._apply_html_table_styles(document, html, theme(foreground="#1e293b"))
+
+        # Nested table is borderless, centered (both duplicate `left` jc removed), and keeps row height.
+        nested_bdr = nested.rows[0].cells[0]._tc.tcPr.find(qn("w:tcBorders"))
+        assert nested_bdr is not None
+        assert nested_bdr.find(qn("w:top")).get(qn("w:val")) == "nil"
+        assert nested.rows[0].cells[0].paragraphs[0].alignment == export_docx.WD_ALIGN_PARAGRAPH.CENTER
+        tr_h = nested.rows[0]._tr.trPr.find(qn("w:trHeight"))
+        assert tr_h is not None and tr_h.get(qn("w:val")) == "1200"
+
+        # Outer cover cell paragraph keeps its own center alignment despite cell text-align: left.
+        assert p_title.alignment == export_docx.WD_ALIGN_PARAGRAPH.CENTER
+        # A page break is inserted after the leading cover-frame table.
+        nxt = outer._tbl.getnext()
+        assert nxt is not None and nxt.find(".//" + qn("w:br")) is not None
+
+        # Inline font-size annotation produces a Pt-sized WH Inline style.
+        annotated = export_docx._annotate_inline_styles_for_pandoc(
+            '<p><span style="font-size: 25px">Big</span></p>'
+        )
+        assert "WH Inline s=188" in annotated
 
 
 class TestConstrainImageWidths:
