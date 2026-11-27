@@ -241,7 +241,14 @@ describe("CreatePageDialog with AI", () => {
     expect(freshApi.post).toHaveBeenNthCalledWith(
       1,
       "/api/v1/ai/spaces/ENG/pages/clarify",
-      { prompt: "how to restart the worker", title: "", lang: "en" },
+      {
+        prompt: "how to restart the worker",
+        title: "",
+        lang: "en",
+        mode: "deep",
+        answers: [],
+        related_ids: [],
+      },
     );
     expect(freshApi.post).toHaveBeenNthCalledWith(
       2,
@@ -252,6 +259,7 @@ describe("CreatePageDialog with AI", () => {
         lang: "en",
         answers: [],
         related_ids: [],
+        detail: "detailed",
       },
     );
     expect(within(dialog).getByLabelText("Title")).toHaveValue(
@@ -379,6 +387,7 @@ describe("CreatePageDialog with AI", () => {
         lang: "en",
         answers: [],
         related_ids: [],
+        detail: "detailed",
       },
     );
     expect(
@@ -386,26 +395,21 @@ describe("CreatePageDialog with AI", () => {
     ).toHaveValue("Grafana guide");
   });
 
-  it("asks the AI's questions, then writes with the answers and the pages it found", async () => {
+  it("interviews adaptively in deep mode, keeps answers separate, and supports preview refinement", async () => {
     const { Fresh, freshApi } = await withAi(true);
-    const found = {
+    const q1 = {
+      done: false,
+      summary: "Clarifying target audience first.",
+      max_questions: 10,
       questions: [
         {
           header: "Audience",
           question: "Who is it for?",
+          rationale: "Controls how much background context is included.",
           multi_select: false,
           options: [
-            { label: "New joiners", description: "No background" },
+            { label: "New joiners", description: "No background", recommended: true },
             { label: "Operators", description: "Daily use" },
-          ],
-        },
-        {
-          header: "Parts",
-          question: "Which parts?",
-          multi_select: true,
-          options: [
-            { label: "Setup", description: "" },
-            { label: "Alerts", description: "" },
           ],
         },
       ],
@@ -419,7 +423,44 @@ describe("CreatePageDialog with AI", () => {
         },
       ],
     };
-    freshApi.post.mockResolvedValueOnce(found).mockResolvedValueOnce(DRAFT);
+    const q2 = {
+      done: false,
+      summary: "Audience settled; clarifying sections.",
+      max_questions: 10,
+      questions: [
+        {
+          header: "Parts",
+          question: "Which parts?",
+          multi_select: true,
+          options: [
+            { label: "Setup", description: "" },
+            { label: "Alerts", description: "" },
+          ],
+        },
+      ],
+      related: q1.related,
+    };
+    const doneClarify = {
+      done: true,
+      summary: "All branches settled.",
+      max_questions: 10,
+      questions: [],
+      related: q1.related,
+    };
+    const draftWithMd = { ...DRAFT, markdown: "## Steps\n\n1. Do it." };
+    const refinedDraft = {
+      title: "Restart the worker",
+      content: '<div data-type="callout"><p>Refined</p></div>',
+      markdown: "## Steps\n\n1. Do it.\n2. Verify.",
+    };
+
+    freshApi.post
+      .mockResolvedValueOnce(q1)
+      .mockResolvedValueOnce(q2)
+      .mockResolvedValueOnce(doneClarify)
+      .mockResolvedValueOnce(draftWithMd)
+      .mockResolvedValueOnce(refinedDraft);
+
     const actor = userEvent.setup();
     render(<Fresh spaceKey="ENG" />);
     const dialog = await openDialog(actor);
@@ -435,53 +476,240 @@ describe("CreatePageDialog with AI", () => {
     expect(
       await within(dialog).findByText("Who is it for?"),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Question 1 of 2")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Question 1 (up to 10)"),
+    ).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Next" })).toBeDisabled();
     await actor.click(within(dialog).getByRole("radio", { name: /Operators/ }));
     await actor.click(within(dialog).getByRole("button", { name: "Next" }));
+
+    // Right-hand "Decisions so far" shows the settled answer while Q2 appears.
+    expect(
+      await within(dialog).findByText("Which parts?"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("1 settled")).toBeInTheDocument();
     await actor.click(within(dialog).getByRole("checkbox", { name: /Setup/ }));
     await actor.click(within(dialog).getByRole("checkbox", { name: /Alerts/ }));
     await actor.type(
       within(dialog).getByLabelText("Or write your own answer"),
       "Docker",
     );
-    await actor.click(
-      within(dialog).getByRole("button", { name: "Write the page" }),
-    );
+    await actor.click(within(dialog).getByRole("button", { name: "Next" }));
 
     await within(dialog).findByTestId("draft-preview");
-    const merged =
-      "Grafana guide\n\n- Who is it for?: Operators\n- Which parts?: Setup, Alerts, Docker";
-    expect(freshApi.post).toHaveBeenLastCalledWith(
+    expect(freshApi.post).toHaveBeenNthCalledWith(
+      4,
       "/api/v1/ai/spaces/ENG/pages/draft",
       {
-        prompt: merged,
+        prompt: "Grafana guide",
         title: "",
         lang: "en",
-        answers: [],
+        answers: [
+          {
+            header: "Audience",
+            question: "Who is it for?",
+            answer: "Operators",
+          },
+          {
+            header: "Parts",
+            question: "Which parts?",
+            answer: "Setup, Alerts, Docker",
+          },
+        ],
         related_ids: ["p1"],
+        detail: "detailed",
       },
     );
-    // The description box now holds what the draft was built from.
+    // Original prompt stays clean and uncorrupted.
     expect(
       within(dialog).getByLabelText("Describe the page you want"),
-    ).toHaveValue(merged);
-    // Regenerating keeps the answers and does not ask again.
-    freshApi.post.mockResolvedValueOnce(DRAFT);
-    await actor.click(
-      within(dialog).getByRole("button", { name: "Regenerate" }),
+    ).toHaveValue("Grafana guide");
+
+    // Refine preview directly from the refine bar (via Enter key) and handle error + Regenerate.
+    await actor.type(
+      within(dialog).getByLabelText(/Ask AI to refine this draft/),
+      "Add verification step{Enter}",
     );
-    await waitFor(() => expect(freshApi.post).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(within(dialog).getByTestId("draft-preview")).toHaveTextContent(
+        "Refined",
+      ),
+    );
+    expect(freshApi.post).toHaveBeenNthCalledWith(
+      5,
+      "/api/v1/ai/spaces/ENG/pages/draft",
+      expect.objectContaining({
+        previous_draft: "## Steps\n\n1. Do it.",
+        revision_instruction: "Add verification step",
+      }),
+    );
+
+    // Refine error shows alert while keeping the preview.
+    freshApi.post.mockRejectedValueOnce(new ApiError(500, "x", "Refine failed."));
+    await actor.type(
+      within(dialog).getByLabelText(/Ask AI to refine this draft/),
+      "Try again",
+    );
+    await actor.click(within(dialog).getByRole("button", { name: "Refine" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Refine failed.",
+    );
+
+    // Regenerate reuses settled answers without re-interviewing.
+    freshApi.post.mockResolvedValueOnce(DRAFT);
+    await actor.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => expect(freshApi.post).toHaveBeenCalledTimes(7));
     expect(freshApi.post).toHaveBeenLastCalledWith(
       "/api/v1/ai/spaces/ENG/pages/draft",
       expect.objectContaining({ related_ids: ["p1"] }),
     );
   });
 
-  it("lets the author skip the questions", async () => {
+  it("supports Back, Rewind, Continue grilling, Clear decisions, and error rollback in deep mode", async () => {
+    const { Fresh, freshApi } = await withAi(true);
+    const q1 = {
+      done: false,
+      summary: "Step 1",
+      max_questions: 10,
+      questions: [
+        {
+          header: "",
+          question: "Q1?",
+          multi_select: false,
+          options: [
+            { label: "A", description: "" },
+            { label: "B", description: "" },
+          ],
+        },
+      ],
+      related: [
+        {
+          id: "p1",
+          title: "Existing guide",
+          slug: "existing",
+          space_key: "ENG",
+          space_name: "Engineering",
+        },
+      ],
+    };
+    const q2 = {
+      done: false,
+      summary: "Step 2",
+      max_questions: 10,
+      questions: [
+        {
+          header: "OS",
+          question: "Q2?",
+          multi_select: false,
+          options: [
+            { label: "Win10", description: "" },
+            { label: "Win11", description: "" },
+          ],
+        },
+      ],
+      related: q1.related,
+    };
+
+    freshApi.post
+      .mockResolvedValueOnce(q1)
+      .mockResolvedValueOnce(q1)
+      .mockRejectedValueOnce(new ApiError(500, "x", "Next question failed."))
+      .mockResolvedValueOnce(q2)
+      .mockResolvedValueOnce(q2)
+      .mockResolvedValueOnce(DRAFT)
+      .mockRejectedValueOnce(new ApiError(500, "x", "Continue failed."))
+      .mockResolvedValueOnce(q2)
+      .mockResolvedValueOnce(DRAFT)
+      .mockResolvedValueOnce({ done: true, questions: [], related: q1.related })
+      .mockResolvedValueOnce(DRAFT);
+
+    const actor = userEvent.setup();
+    render(<Fresh spaceKey="ENG" />);
+    const dialog = await openDialog(actor);
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+    await actor.type(
+      within(dialog).getByLabelText("Describe the page you want"),
+      "Windows setup",
+    );
+    await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
+
+    // Back on Q1 returns to the prompt and reveals Found in the wiki on the right.
+    expect(await within(dialog).findByText("Q1?")).toBeInTheDocument();
+    await actor.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(within(dialog).getByText("Found in the wiki")).toBeInTheDocument();
+    expect(within(dialog).getByText("Existing guide")).toBeInTheDocument();
+
+    // Resume Q1; simulate clarify failure rollback, then succeed to Q2.
+    await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
+    expect(await within(dialog).findByText("Q1?")).toBeInTheDocument();
+    await actor.click(within(dialog).getByRole("radio", { name: "A" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Next question failed.",
+    );
+
+    await actor.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(await within(dialog).findByText("Q2?")).toBeInTheDocument();
+
+    // Test Back to Q1, re-answer Q1 -> Q2, then Rewind via pencil button in Decisions.
+    await actor.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(within(dialog).getByText("Q1?")).toBeInTheDocument();
+    await actor.click(within(dialog).getByRole("radio", { name: "B" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(await within(dialog).findByText("Q2?")).toBeInTheDocument();
+    await actor.click(within(dialog).getByRole("button", { name: "Edit answer" }));
+    expect(within(dialog).getByText("Q1?")).toBeInTheDocument();
+
+    // Select A on Q1 and click "Enough, write now" with selection.
+    await actor.click(within(dialog).getByRole("radio", { name: "A" }));
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Enough, write now" }),
+    );
+    await within(dialog).findByTestId("draft-preview");
+    expect(within(dialog).getByText("1 settled")).toBeInTheDocument();
+
+    // Discard draft, test Continue grilling error, resuming Q2 -> Enough, write now, Quick hiding Continue grilling, Continue grilling done:true -> drafts, and Clear.
+    await actor.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Continue grilling" }),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Continue failed.",
+    );
+
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Continue grilling" }),
+    );
+    expect(await within(dialog).findByText("Q2?")).toBeInTheDocument();
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Enough, write now" }),
+    );
+    await within(dialog).findByTestId("draft-preview");
+
+    await actor.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Quick" }));
+    expect(
+      within(dialog).queryByRole("button", { name: "Continue grilling" }),
+    ).toBeNull();
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Deep (Grill-me)" }),
+    );
+    await actor.click(
+      within(dialog).getByRole("button", { name: "Continue grilling" }),
+    );
+    await within(dialog).findByTestId("draft-preview");
+
+    await actor.click(within(dialog).getByRole("button", { name: "Clear" }));
+    expect(within(dialog).queryByText("1 settled")).toBeNull();
+  });
+
+  it("lets the author stop grilling early with Enough, write now and supports Quick mode", async () => {
     const { Fresh, freshApi } = await withAi(true);
     freshApi.post
       .mockResolvedValueOnce({
+        done: false,
         questions: [
           {
             header: "",
@@ -495,6 +723,7 @@ describe("CreatePageDialog with AI", () => {
         ],
         related: [],
       })
+      .mockResolvedValueOnce(DRAFT)
       .mockResolvedValueOnce(DRAFT);
     const actor = userEvent.setup();
     render(<Fresh spaceKey="ENG" />);
@@ -508,13 +737,27 @@ describe("CreatePageDialog with AI", () => {
     );
     await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
     await actor.click(
-      await within(dialog).findByRole("button", { name: "Skip questions" }),
+      await within(dialog).findByRole("button", { name: "Enough, write now" }),
     );
 
     await within(dialog).findByTestId("draft-preview");
-    expect(freshApi.post).toHaveBeenLastCalledWith(
+    expect(freshApi.post).toHaveBeenNthCalledWith(
+      2,
       "/api/v1/ai/spaces/ENG/pages/draft",
       expect.objectContaining({ answers: [] }),
+    );
+
+    // Quick mode skips clarify completely and respects selected Brief detail level.
+    await actor.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Quick" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Brief" }));
+    await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
+
+    await waitFor(() => expect(freshApi.post).toHaveBeenCalledTimes(3));
+    expect(freshApi.post).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/ai/spaces/ENG/pages/draft",
+      expect.objectContaining({ detail: "brief" }),
     );
   });
 

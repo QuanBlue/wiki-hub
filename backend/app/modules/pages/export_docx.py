@@ -566,23 +566,18 @@ def _clear_paragraph(paragraph: Any) -> None:
         run._r.getparent().remove(run._r)
 
 
-def _insert_toc_field(paragraph: Any) -> None:
+def _insert_toc_field(
+    paragraph: Any, headings: list[tuple[int, str]] | None = None
+) -> None:
     """Turn this (otherwise-empty) paragraph into a real Word "Table of
     Contents" field - the same complex field Word itself inserts via
-    References > Table of Contents, not a hand-rolled list of hyperlinks: an
-    actual field a reader can right-click and "Update Field" on, that shows
-    up in Word's own navigation pane, and that is built from the heading
-    paragraph styles (Heading 1, Heading 2, ...) Pandoc already assigned
-    rather than anything this export invents. ``\\o "1-4"`` matches the
-    frontend's own heading levels (``StarterKit.configure({ heading: {
-    levels: [1, 2, 3, 4] } })`` in rich-text-editor.tsx); ``\\h`` makes every
-    entry a real jump-to link, ``\\z`` hides the tab leader in web layout,
-    ``\\u`` falls back to a paragraph's outline level if it has no heading
-    style at all.
+    References > Table of Contents. Pre-populates the cached display result
+    from the document's headings so readers see the outline immediately
+    without Word prompting to update external fields on open.
     """
     _clear_paragraph(paragraph)
     begin = paragraph.add_run()
-    begin._r.append(_field_char("begin", dirty=True))
+    begin._r.append(_field_char("begin", dirty=False))
 
     instr_run = paragraph.add_run()
     instr = OxmlElement("w:instrText")
@@ -593,17 +588,34 @@ def _insert_toc_field(paragraph: Any) -> None:
     separate = paragraph.add_run()
     separate._r.append(_field_char("separate"))
 
-    # Word replaces this with the real outline the first time the field is
-    # updated - shown only until then, or if a reader opens the file
-    # somewhere fields never auto-update.
-    placeholder = paragraph.add_run(
-        'Right-click here and choose "Update Field" to build the table of'
-        " contents."
-    )
-    placeholder.italic = True
+    if headings:
+        for idx, (level, text) in enumerate(headings):
+            indent = "    " * max(0, level - 1)
+            run = paragraph.add_run(f"{indent}{text}")
+            if level == 1:
+                run.bold = True
+            if idx < len(headings) - 1:
+                run.add_break()
+    else:
+        placeholder = paragraph.add_run(
+            'Right-click here and choose "Update Field" to build the table of'
+            " contents."
+        )
+        placeholder.italic = True
 
     end = paragraph.add_run()
     end._r.append(_field_char("end"))
+
+
+def _collect_toc_headings(document: Any) -> list[tuple[int, str]]:
+    headings: list[tuple[int, str]] = []
+    for paragraph in document.paragraphs:
+        style_name = paragraph.style.name if paragraph.style is not None else ""
+        if style_name in ("Heading 1", "Heading 2", "Heading 3", "Heading 4"):
+            text = paragraph.text.strip()
+            if text:
+                headings.append((int(style_name[-1]), text))
+    return headings
 
 
 def _insert_native_toc_fields(document: Any) -> bool:
@@ -613,10 +625,11 @@ def _insert_native_toc_fields(document: Any) -> bool:
     mechanism instead of the custom-rendered outline PDF/HTML use.
     Returns whether any TOC field was inserted.
     """
+    headings = _collect_toc_headings(document)
     inserted = False
     for paragraph in document.paragraphs:
         if paragraph.text == WORD_TOC_FIELD_MARKER:
-            _insert_toc_field(paragraph)
+            _insert_toc_field(paragraph, headings)
             inserted = True
     return inserted
 
@@ -1399,12 +1412,39 @@ def _apply_html_table_styles(document: Any, html: str, theme: dict[str, str]) ->
             _insert_page_break_after_table(doc_table)
 
 
+def _cell_max_image_width_emus(shape: Any) -> int | None:
+    """If ``shape`` sits inside a Word table cell with an explicit ``dxa``
+    width, return its inner printable width in EMUs so images inside narrow
+    table cells scale down instead of being clipped."""
+    inline = getattr(shape, "_inline", None)
+    if inline is None:
+        return None
+    node = inline.getparent()
+    tc_tag = qn("w:tc")
+    while node is not None and node.tag != tc_tag:
+        node = node.getparent()
+    if node is None or node.tcPr is None:
+        return None
+    tc_w = node.tcPr.find(qn("w:tcW"))
+    if tc_w is None or tc_w.get(qn("w:type")) != "dxa":
+        return None
+    try:
+        twips = int(tc_w.get(qn("w:w")) or "0")
+    except ValueError:
+        return None
+    inner_twips = max(360, twips - 240)
+    return inner_twips * 635
+
+
 def _constrain_image_widths(document: Any) -> None:
-    """Keep embedded images within the A4 printable area while preserving
-    their aspect ratio."""
-    max_w = int(Cm(_MAX_IMAGE_WIDTH_CM))
+    """Keep embedded images within the A4 printable area (and within their
+    enclosing table cell when placed inside a table) while preserving their
+    aspect ratio."""
+    page_max_w = int(Cm(_MAX_IMAGE_WIDTH_CM))
     max_h = int(Cm(_MAX_IMAGE_HEIGHT_CM))
     for shape in document.inline_shapes:
+        cell_max_w = _cell_max_image_width_emus(shape)
+        max_w = min(page_max_w, cell_max_w) if cell_max_w is not None else page_max_w
         width = shape.width
         height = shape.height
         if width > max_w:
@@ -1502,10 +1542,8 @@ async def html_to_docx(
         _apply_inline_custom_styles(document)
         _set_document_font(document, body_font=_docx_body_font(font_id), mono_font=_DOCX_MONO_FONT)
         _constrain_image_widths(document)
-        has_toc = _insert_native_toc_fields(document)
+        _insert_native_toc_fields(document)
         _add_page_number_footer(document)
-        if has_toc:
-            _auto_update_fields_on_open(document)
         if post_process is not None:
             post_process(document)
 

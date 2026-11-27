@@ -333,6 +333,9 @@ class TestNativeTocField:
             p for p in saved.paragraphs if p._p.find(f".//{qn('w:fldChar')}") is not None
         )
         assert toc_paragraph.text != export_docx.WORD_TOC_FIELD_MARKER
+        assert "Introduction" in toc_paragraph.text
+        # Never emit w:updateFields so Word does not show the external-fields warning popup on open
+        assert saved.settings.element.find(qn("w:updateFields")) is None
 
     def test_sets_update_fields_on_open(self) -> None:
         document = Document()
@@ -769,3 +772,28 @@ class TestConstrainImageWidths:
         assert abs(wide.height - int(export_docx.Cm(5.0))) <= 5
         assert tall.height == int(export_docx.Cm(export_docx._MAX_IMAGE_HEIGHT_CM))
         assert abs(tall.width - int(export_docx.Cm(5.0))) <= 5
+
+    def test_constrains_image_inside_narrow_table_cell(self) -> None:
+        document = Document()
+        table = document.add_table(rows=1, cols=1)
+        tc = table.rows[0].cells[0]._tc
+        export_docx._set_tc_width(tc, 2240)
+        p = tc.findall(qn("w:p"))[0]
+        fake_inline = OxmlElement("w:r")
+        p.append(fake_inline)
+
+        class CellShape:
+            def __init__(self) -> None:
+                self._inline = fake_inline
+                self.width = int(export_docx.Cm(12.0))
+                self.height = int(export_docx.Cm(6.0))
+
+        class FakeDoc:
+            def __init__(self, shape: CellShape) -> None:
+                self.inline_shapes = [shape]
+
+        shape = CellShape()
+        export_docx._constrain_image_widths(FakeDoc(shape))
+        expected_w = (2240 - 240) * 635
+        assert shape.width == expected_w
+        assert abs(shape.height - expected_w // 2) <= 5

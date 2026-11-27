@@ -72,6 +72,7 @@ _STOP_WORDS = frozenset(
 )
 
 MAX_QUESTIONS = 4
+DEEP_MAX_QUESTIONS = 10
 
 
 def keywords(text: str, limit: int = 5) -> list[str]:
@@ -142,6 +143,14 @@ def wiki_context(pages: list[WikiPage], excerpt: int = 500) -> str:
     return "<wiki>\n" + "\n".join(blocks) + "\n</wiki>"
 
 
+def _order_options(question: ClarifyQuestion) -> ClarifyQuestion:
+    """Keep recommended options first so the best default stands out."""
+    if not any(option.recommended for option in question.options):
+        return question
+    ordered = sorted(question.options, key=lambda option: not option.recommended)
+    return question.model_copy(update={"options": ordered})
+
+
 def parse_questions(reply: str) -> list[ClarifyQuestion]:
     """The model's JSON, or nothing when it did not give usable JSON."""
     found = re.search(r"\{.*\}", reply, flags=re.S)
@@ -159,10 +168,43 @@ def parse_questions(reply: str) -> list[ClarifyQuestion]:
         except ValidationError:
             continue
         if len(question.options) >= 2:
-            questions.append(question)
+            questions.append(_order_options(question))
         if len(questions) == MAX_QUESTIONS:
             break
     return questions
+
+
+def parse_deep_clarify(reply: str) -> tuple[bool, str, list[ClarifyQuestion]]:
+    """Parse one adaptive grill-me step: ``(done, summary, [question])``."""
+    found = re.search(r"\{.*\}", reply, flags=re.S)
+    if not found:
+        return True, "", []
+    try:
+        data = json.loads(found.group(0))
+    except (ValueError, AttributeError):
+        return True, "", []
+    if not isinstance(data, dict):
+        return True, "", []
+
+    done = bool(data.get("done", False))
+    summary = str(data.get("summary") or "").strip()[:300]
+    if done:
+        return True, summary, []
+
+    raw_candidates: list[object] = []
+    if isinstance(data.get("question"), dict):
+        raw_candidates.append(data["question"])
+    elif isinstance(data.get("questions"), list):
+        raw_candidates.extend(data["questions"])
+
+    for item in raw_candidates:
+        try:
+            question = ClarifyQuestion.model_validate(item)
+        except ValidationError:
+            continue
+        if len(question.options) >= 2:
+            return False, summary, [_order_options(question)]
+    return True, summary, []
 
 
 def parse_suggestions(reply: str, candidates: int) -> tuple[list[str], list[int]]:

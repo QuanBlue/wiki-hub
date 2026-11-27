@@ -49,19 +49,27 @@ DEFAULT_SUMMARY_INSTRUCTIONS = "\n".join(
 #: What drafting a new page does unless an administrator writes their own.
 DEFAULT_PAGE_DRAFT_INSTRUCTIONS = "\n".join(
     [
-        "Write a first draft of a wiki page from the author's short description.",
+        "Write a clear, practical, production-ready wiki page from the author's description "
+        "and Q&A decisions.",
         "",
-        "- Give the page a clear, specific title of a few words.",
-        "- Open with one or two sentences saying what the page is for and who it helps.",
-        "- Organise the body under short `##` sections in the order a reader needs them: "
-        "context, then steps or details, then things to watch out for.",
-        "- Prefer what fits the content: numbered steps for a procedure, a checklist "
-        "(`- [ ]`) for things to tick off, a table for comparisons, a fenced code block "
-        "for commands.",
-        "- Be concrete and practical, in plain active sentences, with no filler.",
-        "- Use only what the description gives you. Where a real value is needed but unknown "
-        "(a host, an owner, a date, a number), write a clear placeholder such as `<owner>` "
-        "instead of inventing one.",
+        "- Give the page a specific, scannable title of a few words.",
+        "- Open with a short overview explaining who the page is for, what it accomplishes, "
+        "and any key prerequisites before starting.",
+        "- For technical guides and SOPs, expand well-established public technical procedures "
+        "(exact UI navigation paths, administrator privilege notes, verification checks, and "
+        "common troubleshooting steps) so a newcomer can execute every step without guessing.",
+        "- Preserve every internal step order, tool name, port, filter rule, and user "
+        "decision faithfully; never reorder critical sequences or skip cautionary steps.",
+        "- Never fabricate organisation-specific values (IPs, URLs, domains, contacts, "
+        "credentials). Whenever an internal value is missing or marked `...`, keep a "
+        "consistent, descriptive placeholder in inline code such as `<IP_MÁY>`, "
+        "`<URL_HOST_ATTT>`, `<DOMAIN_NỘI_BỘ>`, or `<LIÊN_HỆ_IT>`, and gather them in an "
+        "upfront configuration summary table so the author can fill them in one place.",
+        "- Use WikiHub's structured blocks purposefully: a configuration table for parameters, "
+        "numbered steps with bold UI click paths, callouts for warnings/tips, status badges "
+        "sparingly on critical checkpoints, collapsible toggles for troubleshooting or "
+        "secondary branches, Mermaid flowcharts for multi-stage workflows, and a final "
+        "checklist for verification.",
     ]
 )
 
@@ -69,11 +77,76 @@ DEFAULT_PAGE_DRAFT_INSTRUCTIONS = "\n".join(
 PAGE_DRAFT_RULES = (
     "Reply in Markdown only. The first line must be 'Title: ' followed by the page "
     "title, then a blank line, then the body. Do not repeat the title as a heading in "
-    "the body, and use no `#` heading; start sections at `##`. Allowed: paragraphs, "
-    "`##`/`###` headings, bullet and numbered lists, task lists ('- [ ] item'), pipe "
-    "tables, fenced code blocks with a language (use '```mermaid' blocks for flowcharts, processes, architecture or sequence diagrams), '> ' quotes, **bold**, _italic_, "
-    "`inline code` and links. No raw HTML, no images, no preamble and no closing remark. "
-    "Write in the same language as the description."
+    "the body, and use no `#` heading; start sections at `##` and use `###`/`####` for "
+    "subsections. Supported WikiHub blocks and syntax:\n"
+    "- `[TOC]` on its own line right after the opening overview when the page has 4 or "
+    "more `##` sections (renders a live Table of Contents).\n"
+    "- Callouts: `> [!INFO] Title\\n> body`, `> [!WARNING] Title\\n> body`, "
+    "`> [!TIP] Title\\n> body`, `> [!NOTE] Title\\n> body` for prerequisites, "
+    "critical warnings (such as reboot timing or data loss), and tips.\n"
+    "- Collapsible sections: `:::toggle Summary title` on its own line, body inside, "
+    "closed by `:::` on its own line (use `:::toggle[open] Summary title` when open by "
+    "default) for troubleshooting, FAQs, or optional details.\n"
+    "- Inline status badges (use sparingly only on key steps/checkpoints): "
+    "`[badge:red|REQUIRED]`, `[badge:amber|RESTART]`, `[badge:blue|ADMIN]`, "
+    "`[badge:green|DONE]` (valid colors: `neutral`, `blue`, `green`, `amber`, `red`, "
+    "`purple`; translate the label into the page language).\n"
+    "- Standard blocks: paragraphs, bullet and numbered lists, task checklists "
+    "(`- [ ] item`), pipe tables, fenced code blocks with language, `> ` quotes, "
+    "`**bold**` for UI menus/buttons/paths (e.g., **Settings** → **System** → **About**), "
+    "`_italic_`, `` `inline code` `` for literal values/commands/filenames/placeholders, "
+    "and links.\n"
+    "- Mermaid diagrams: use ` ```mermaid ` blocks for multi-stage workflows or branching "
+    "decisions; ALWAYS quote node labels containing parentheses, brackets, colons, or "
+    'non-ASCII text (e.g., `A["Step 1: Setup"]`).\n'
+    "No raw HTML, no images, no preamble and no closing remark. Write strictly in the "
+    "same language as the request."
+)
+
+PAGE_DRAFT_DETAIL_RULES = {
+    "brief": (
+        "DETAIL LEVEL (BRIEF): Keep the page compact and fast to scan (~250 to 500 words). "
+        "Include a short overview, a compact parameter/placeholder table if needed, the "
+        "core numbered steps in order, and essential warnings in callouts. Skip lengthy "
+        "background, Mermaid diagrams, and collapsible troubleshooting toggles."
+    ),
+    "normal": (
+        "DETAIL LEVEL (STANDARD): Write a clear, balanced guide (~600 to 1200 words). "
+        "Include an overview, a parameter summary table, clear numbered steps grouped by "
+        "phase with bold UI paths, targeted callouts for warnings/tips, brief verification "
+        "checks, and a short closing checklist."
+    ),
+    "detailed": (
+        "DETAIL LEVEL (DETAILED): Write a thorough, end-to-end production guide (~1200 to "
+        "2800 words when the topic warrants; never pad with filler). Include: "
+        "1) a crisp overview + `[TOC]` when there are 4+ sections; "
+        "2) prerequisites and a centralized Configuration & Placeholders table; "
+        "3) a Mermaid overview diagram when the process has multiple phases, branches, or "
+        "restart points; "
+        "4) granular phase-by-phase numbered instructions including standard UI navigation "
+        "paths, exact commands/settings, privilege notes, and restrained status badges at "
+        "reboot/admin checkpoints; "
+        "5) prominent `> [!WARNING]` / `> [!TIP]` callouts for pitfalls and order-critical "
+        "rules; "
+        "6) how to verify each major phase succeeded; "
+        "7) collapsible `:::toggle` sections for common errors/troubleshooting or secondary "
+        "alternatives; and "
+        "8) a final `- [ ]` acceptance checklist."
+    ),
+}
+
+PAGE_DRAFT_TOKENS = {
+    "brief": 2400,
+    "normal": 4800,
+    "detailed": 8000,
+}
+
+PAGE_DRAFT_REVISION_RULES = (
+    "REVISION MODE: You are revising an existing draft provided between <previous_draft> "
+    "tags according to the author's feedback in <revision_instruction>. Preserve all "
+    "accurate facts, placeholders, and well-structured sections that the instruction does "
+    "not ask to change, apply every requested improvement cleanly, and reply with the "
+    "complete updated page starting with `Title: `."
 )
 
 #: Always applied, whatever the instructions say: the answer is shown as Markdown,
@@ -118,11 +191,50 @@ CLARIFY_RULES = (
     "of one or two full sentences that add what the description leaves out - what the page "
     "would then contain or skip, and when to pick it - never repeating the description; "
     "set multi_select "
-    "to true only when several options can apply together. If the request is already clear "
+    "to true only when several options can apply together, and mark the single best default "
+    'option with `"recommended": true` placed first. If the request is already clear '
     "enough, ask nothing. Reply with JSON only, no other text, in exactly this shape: "
-    '{"questions":[{"header":"Audience","question":"...","multi_select":false,'
-    '"options":[{"label":"...","description":"...","detail":"..."}]}]}. '
+    '{"questions":[{"header":"Audience","question":"...","rationale":"...","multi_select":false,'
+    '"options":[{"label":"...","description":"...","detail":"...","recommended":true}]}]}. '
     "Write the questions in the same language as the request."
+)
+
+CLARIFY_DEEP_RULES = (
+    "You are interviewing the author like a senior technical editor (/grill-me mode) before "
+    "drafting a wiki page. Walk down each branch of the design & content tree, resolving "
+    "dependencies and ambiguities ONE focused question per turn based on <request>, <wiki>, "
+    "and prior <answers>.\n"
+    "Rules:\n"
+    "1) Ask ONE question per turn - never bundle multiple unrelated questions into one. "
+    "NEVER re-ask anything already stated in <request>, <wiki>, or prior <answers>.\n"
+    "2) Focus on decisions that materially improve the page's accuracy, detail, or structure:\n"
+    "   - Alternative methods/branches (e.g., manual install vs image restore: which is "
+    "primary, tool names, exact prerequisites, and how deep each branch should go).\n"
+    "   - Order-critical steps, required privileges, reboot checkpoints, verification steps "
+    "(how the reader confirms each phase worked), and troubleshooting depth.\n"
+    "   - Missing internal parameters (`...` or blanks): NEVER interrogate every single "
+    "blank one by one. Ask at most ONE grouped question about whether to keep standardized "
+    "placeholders (like `<IP_MÁY>`, `<DOMAIN_NỘI_BỘ>`) for filling in later or provide key "
+    "conventions/values now.\n"
+    "   - Tone when informal notes or jokes appear in <request>: ask at most ONE brief "
+    "question on whether to standardize into formal SOP tone or retain a light friendly "
+    "onboarding note.\n"
+    "   - Visual & layout choices (workflow diagram, collapsible troubleshooting toggles, "
+    "acceptance checklist) only when not yet obvious.\n"
+    "3) Provide 2 to 4 concrete options per question. Each option needs a short `label`, a "
+    "concise `description` (<=12 words), and a `detail` (1-2 sentences explaining what the "
+    "generated page will include or skip). Place your recommended default choice FIRST and "
+    'set `"recommended": true` on it. Include a 1-sentence `rationale` explaining why this '
+    "decision matters. Set `multi_select: true` only when choices combine.\n"
+    "4) Stop as soon as you have shared understanding on the essential branches (typically "
+    '3 to 7 questions, never pad to hit the limit): return `"done": true, "question": null`.\n'
+    "Reply with JSON only, no surrounding prose, in exactly this shape:\n"
+    '{"done":false,"summary":"1-line note of what is settled / current branch",'
+    '"question":{"header":"Branch","question":"...","rationale":"...",'
+    '"multi_select":false,"options":[{"label":"...","description":"...",'
+    '"detail":"...","recommended":true}]}}\n'
+    "Write everything (header, summary, question, rationale, options) strictly in the same "
+    "language as <request>."
 )
 
 DRAFT_SAFETY_RULES = (
@@ -569,12 +681,20 @@ def answer_system_prompt(
     return "\n\n".join(rules)
 
 
-def clarify_system_prompt() -> str:
-    return f"{CLARIFY_RULES}\n\n{DRAFT_SAFETY_RULES}"
+def clarify_system_prompt(mode: str = "quick") -> str:
+    rules = CLARIFY_DEEP_RULES if mode == "deep" else CLARIFY_RULES
+    return f"{rules}\n\n{DRAFT_SAFETY_RULES}"
 
 
-def page_draft_system_prompt(instructions: str) -> str:
-    return f"{instructions}\n\n{PAGE_DRAFT_RULES}\n\n{DRAFT_SAFETY_RULES}"
+def page_draft_system_prompt(
+    instructions: str, detail: str = "detailed", *, revising: bool = False
+) -> str:
+    detail_rules = PAGE_DRAFT_DETAIL_RULES.get(detail, PAGE_DRAFT_DETAIL_RULES["detailed"])
+    parts = [instructions, detail_rules, PAGE_DRAFT_RULES]
+    if revising:
+        parts.append(PAGE_DRAFT_REVISION_RULES)
+    parts.append(DRAFT_SAFETY_RULES)
+    return "\n\n".join(parts)
 
 
 def summary_system_prompt(instructions: str, lang: str | None = None) -> str:
@@ -787,9 +907,12 @@ _ASSIST_TASKS = {
     "write": (
         "Write new content for the wiki page at the caret, as the instruction between "
         "<instruction> tags says. <before> and <after> show the text around the caret: fit "
-        "in with them and never repeat them. Reply in Markdown only - paragraphs, ## headings, "
-        "lists, '- [ ]' task lists, pipe tables, fenced code blocks - with no preamble and "
-        "no title unless asked for one."
+        "in with them and never repeat them. Reply in Markdown only - paragraphs, ##/### "
+        "headings, lists, '- [ ]' task lists, pipe tables, fenced code blocks (including "
+        "```mermaid diagrams), callouts ('> [!INFO]', '> [!WARNING]', '> [!TIP]', "
+        "'> [!NOTE]'), collapsible blocks (':::toggle Title\\n...\\n:::'), and inline "
+        "status badges ('[badge:blue|LABEL]') - with no preamble and no title unless asked "
+        "for one."
     ),
     "terms": (
         "Make the terminology of the text between <text> tags consistent with the existing "

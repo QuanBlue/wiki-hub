@@ -10,8 +10,15 @@ import pytest
 
 from app.modules.ai import service as service_module
 from app.modules.ai.config import AIConfig
-from app.modules.ai.page_context import keywords, parse_questions, wiki_context
+from app.modules.ai.page_context import (
+    DEEP_MAX_QUESTIONS,
+    keywords,
+    parse_deep_clarify,
+    parse_questions,
+    wiki_context,
+)
 from app.modules.ai.service import AIService
+from app.modules.ai.skills import CLARIFY_DEEP_RULES, DEFAULT_PAGE_DRAFT_INSTRUCTIONS
 from app.schemas.ai import PageAnswer, PageDraftRequest
 from tests.unit.ai_fakes import fake_chat
 
@@ -161,3 +168,133 @@ async def test_the_draft_is_given_the_answers_and_the_related_pages(
     assert "<wiki>" in sent and "Prometheus setup" in sent
     assert draft.title == "Grafana"
     assert harness.charges == 1
+
+
+def test_default_page_draft_instructions_fit_skill_limit() -> None:
+    assert len(DEFAULT_PAGE_DRAFT_INSTRUCTIONS) <= 4000
+    assert "title" in DEFAULT_PAGE_DRAFT_INSTRUCTIONS.lower()
+
+
+def test_parse_deep_clarify_orders_recommended_option_first() -> None:
+    reply = json.dumps(
+        {
+            "done": False,
+            "summary": "Đã rõ phạm vi OS; đang chốt nhánh cài đặt.",
+            "question": {
+                "header": "Cài đặt OS",
+                "question": "Hướng dẫn cài bằng tay hay bung file .tib nên viết sâu phần nào hơn?",
+                "rationale": "Giúp bài không bị lan man hoặc thiếu bước ở phương án chính.",
+                "multi_select": False,
+                "options": [
+                    {
+                        "label": "Chỉ mô tả sơ lược",
+                        "description": "Đủ ý chính",
+                        "recommended": False,
+                    },
+                    {
+                        "label": "Chi tiết cả 2 nhánh",
+                        "description": "Gồm cả hướng dẫn ISO và file .tib",
+                        "detail": "Tạo 2 phần chi tiết kèm bảng so sánh khi nào dùng cách nào.",
+                        "recommended": True,
+                    },
+                ],
+            },
+        }
+    )
+
+    done, summary, questions = parse_deep_clarify(reply)
+
+    assert done is False
+    assert "nhánh cài đặt" in summary
+    assert len(questions) == 1
+    assert questions[0].rationale.startswith("Giúp bài")
+    assert [opt.label for opt in questions[0].options] == [
+        "Chi tiết cả 2 nhánh",
+        "Chỉ mô tả sơ lược",
+    ]
+    assert questions[0].options[0].recommended is True
+
+
+def test_parse_deep_clarify_done_or_invalid_stops_interview() -> None:
+    assert parse_deep_clarify('{"done": true, "summary": "Đủ ý", "question": null}') == (
+        True,
+        "Đủ ý",
+        [],
+    )
+    assert parse_deep_clarify("not json") == (True, "", [])
+
+
+async def test_deep_clarify_runs_adaptively_and_stops_at_max_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    next_q = json.dumps(
+        {
+            "done": False,
+            "summary": "Đã chốt nhánh cài OS.",
+            "question": {
+                "header": "Thông số nội bộ",
+                "question": "Các dấu ... trong prompt xử lý thế nào?",
+                "rationale": "Tránh hỏi lặt vặt từng địa chỉ IP/domain.",
+                "multi_select": False,
+                "options": [
+                    {
+                        "label": "Giữ placeholder chuẩn",
+                        "description": "Dùng <IP_MÁY>, <DOMAIN>",
+                        "recommended": True,
+                    },
+                    {
+                        "label": "Điền giá trị mẫu",
+                        "description": "Nhập thêm ngay bây giờ",
+                    },
+                ],
+            },
+        }
+    )
+    harness = Harness(monkeypatch, next_q)
+    rate_calls: list[tuple[str, str]] = []
+
+    async def track_enforce(key: str, rule: str) -> None:
+        harness.charges += 1
+        rate_calls.append((key, rule))
+
+    monkeypatch.setattr(service_module.rate_limit, "enforce", track_enforce)
+
+    # Follow-up turn reuses related_ids and sends prior answers + uses ai-clarify bucket.
+    res = await harness.service.clarify_page(
+        "IT",
+        PageDraftRequest(
+            prompt="Hướng dẫn cài Win 10/11 Enterprise...",
+            mode="deep",
+            answers=[
+                PageAnswer(
+                    header="Phương pháp cài",
+                    question="Ưu tiên cách tự cài hay .tib?",
+                    answer="Chi tiết cả 2 nhánh",
+                )
+            ],
+            related_ids=[uuid.UUID(int=1)],
+        ),
+    )
+
+    assert res.done is False
+    assert len(res.questions) == 1
+    assert res.max_questions == DEEP_MAX_QUESTIONS
+    assert harness.messages[0][0]["content"].startswith(CLARIFY_DEEP_RULES)
+    assert "[Phương pháp cài] Ưu tiên cách tự cài hay .tib?: Chi tiết cả 2 nhánh" in harness.messages[0][1]["content"]
+    assert rate_calls[0][0].startswith("ai-clarify:")
+
+    # Reaching DEEP_MAX_QUESTIONS returns done=True without invoking the model.
+    maxed = await harness.service.clarify_page(
+        "IT",
+        PageDraftRequest(
+            prompt="Hướng dẫn cài Win 10/11 Enterprise...",
+            mode="deep",
+            answers=[
+                PageAnswer(question=f"Q{i}", answer=f"A{i}")
+                for i in range(DEEP_MAX_QUESTIONS)
+            ],
+        ),
+    )
+    assert maxed.done is True
+    assert maxed.questions == []
+    assert len(harness.messages) == 1

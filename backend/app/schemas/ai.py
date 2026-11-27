@@ -73,35 +73,48 @@ class RevisionDiffSummaryRead(BaseModel):
 class PageAnswer(BaseModel):
     """One clarifying question and what the author chose or wrote."""
 
-    question: str = Field(min_length=1, max_length=300)
-    answer: str = Field(min_length=1, max_length=500)
+    header: str = Field(default="", max_length=32)
+    question: str = Field(min_length=1, max_length=400)
+    answer: str = Field(min_length=1, max_length=1000)
 
 
 class PageDraftRequest(BaseModel):
     #: What the page should be about, in the author's words.
-    prompt: str = Field(min_length=3, max_length=2000)
+    prompt: str = Field(min_length=3, max_length=8000)
     #: The title typed so far; the model picks one when blank.
     title: str = Field(default="", max_length=255)
     #: Language code of the app, for the notice at the top of the page.
     lang: str | None = Field(default=None, max_length=8)
     #: The author's answers to the clarifying questions, if any were asked.
-    answers: list[PageAnswer] = Field(default_factory=list, max_length=6)
+    answers: list[PageAnswer] = Field(default_factory=list, max_length=12)
     #: Wiki pages found for the request; re-checked for access before use.
     related_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5)
+    #: Clarify strategy: quick (single pass) or deep (adaptive grill-me interview).
+    mode: Literal["quick", "deep"] = "quick"
+    #: Target detail level for the drafted page.
+    detail: Literal["brief", "normal", "detailed"] = "detailed"
+    #: Previous Markdown draft when revising from preview feedback.
+    previous_draft: str = Field(default="", max_length=60000)
+    #: Follow-up instruction to refine ``previous_draft``.
+    revision_instruction: str = Field(default="", max_length=2000)
 
 
 class ClarifyOption(BaseModel):
-    label: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=100)
     #: A few words under the label.
-    description: str = Field(default="", max_length=120)
+    description: str = Field(default="", max_length=160)
     #: The fuller explanation, shown on hover.
     detail: str = Field(default="", max_length=500)
+    #: Whether the assistant recommends this option as the sensible default.
+    recommended: bool = False
 
 
 class ClarifyQuestion(BaseModel):
     #: A one- or two-word tag for the question, like "Audience".
-    header: str = Field(default="", max_length=24)
-    question: str = Field(min_length=1, max_length=300)
+    header: str = Field(default="", max_length=32)
+    question: str = Field(min_length=1, max_length=400)
+    #: Why this question matters for the final page structure or content.
+    rationale: str = Field(default="", max_length=300)
     multi_select: bool = False
     options: list[ClarifyOption] = Field(min_length=2, max_length=5)
 
@@ -119,12 +132,20 @@ class PageClarify(BaseModel):
     questions: list[ClarifyQuestion]
     #: Pages already in the wiki that the draft will take into account.
     related: list[RelatedPage]
+    #: True when the interview has enough context to draft immediately.
+    done: bool = False
+    #: Brief note summarizing what is settled so far.
+    summary: str = ""
+    #: Maximum number of adaptive questions in deep mode.
+    max_questions: int = 10
 
 
 class PageDraft(BaseModel):
     title: str
     #: Ready-to-store page HTML, starting with the "written by AI" notice.
     content: str
+    #: Raw Markdown body (without Title line or AI notice) for follow-up refinement.
+    markdown: str = ""
 
 
 class ExplainRequest(BaseModel):

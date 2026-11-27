@@ -29,13 +29,17 @@ from app.modules.ai.config import AIConfig, load_config
 from app.modules.ai.draft_html import draft_to_html, split_title
 from app.modules.ai.limits import ai_rate_limit
 from app.modules.ai.page_context import (
+    DEEP_MAX_QUESTIONS,
+    MAX_QUESTIONS,
     find_related,
+    parse_deep_clarify,
     parse_questions,
     parse_suggestions,
     wiki_context,
 )
 from app.modules.ai.skills import (
     LANGUAGES,
+    PAGE_DRAFT_TOKENS,
     assist_system_prompt,
     clarify_system_prompt,
     diff_summary_system_prompt,
@@ -264,26 +268,94 @@ class AIService:
             if i in by_id and await permissions.can_view_page(by_id[i], self.user)
         ]
 
-    async def _creator_config(self, key: str):
+    async def _creator_config(
+        self,
+        key: str,
+        *,
+        rate_bucket: str | None = None,
+        rate_rule: str | None = None,
+    ):
         config = await load_config(self.session)
         if not config.ready:
             raise ServiceUnavailableError("The AI assistant is not enabled.")
         space = await self.spaces.get_by_key(key)
         # Only someone who could create the page may spend the model on it.
         await self.pages.require_editor(space, self.user)
-        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
+        await rate_limit.enforce(
+            rate_bucket or f"ai:{self.user.id}",
+            rate_rule or await ai_rate_limit(),
+        )
         return config, space
 
     async def clarify_page(self, key: str, payload: PageDraftRequest) -> PageClarify:
         """Look the request up in the wiki, then ask what is still unclear."""
-        config, space = await self._creator_config(key)
+        is_follow_up = payload.mode == "deep" and len(payload.answers) > 0
+        config, space = await self._creator_config(
+            key,
+            rate_bucket=f"ai-clarify:{self.user.id}" if is_follow_up else None,
+            rate_rule="180/hour" if is_follow_up else None,
+        )
         request = "\n".join([payload.title.strip(), payload.prompt.strip()]).strip()
-        related = await find_related(self.session, self.user, request, space_id=space.id)
+        if payload.related_ids:
+            related = await self._readable_pages(payload.related_ids)
+        else:
+            related = await find_related(self.session, self.user, request, space_id=space.id)
+        related_items = [
+            RelatedPage(
+                id=page.id,
+                title=page.title,
+                slug=page.slug,
+                space_key=page.space.key,
+                space_name=page.space.name,
+            )
+            for page in related
+        ]
+
+        if payload.mode == "deep":
+            if len(payload.answers) >= DEEP_MAX_QUESTIONS:
+                return PageClarify(
+                    questions=[],
+                    related=related_items,
+                    done=True,
+                    max_questions=DEEP_MAX_QUESTIONS,
+                )
+            parts = ["<request>", request, "</request>"]
+            if payload.answers:
+                parts.append("<answers>")
+                for ans in payload.answers:
+                    prefix = f"[{ans.header}] " if ans.header else ""
+                    parts.append(f"- {prefix}{ans.question}: {ans.answer}")
+                parts.append("</answers>")
+            parts.append(
+                f"<progress>Question {len(payload.answers) + 1} of at most "
+                f"{DEEP_MAX_QUESTIONS}.</progress>"
+            )
+            wiki = wiki_context(related, 400)
+            if wiki:
+                parts.append(wiki)
+            reply = await self._chat(
+                "clarify",
+                config,
+                [
+                    {"role": "system", "content": clarify_system_prompt("deep")},
+                    {"role": "user", "content": "\n".join(parts)},
+                ],
+                max_tokens=1400,
+            )
+            done, summary, questions = parse_deep_clarify(reply)
+            return PageClarify(
+                questions=questions,
+                related=related_items,
+                done=done,
+                summary=summary,
+                max_questions=DEEP_MAX_QUESTIONS,
+            )
+
         reply = await self._chat(
             "clarify",
             config,
             [
-                {"role": "system", "content": clarify_system_prompt()},
+                {"role": "system", "content": clarify_system_prompt("quick")},
                 {
                     "role": "user",
                     "content": "\n".join(
@@ -295,20 +367,13 @@ class AIService:
         )
         return PageClarify(
             questions=parse_questions(reply),
-            related=[
-                RelatedPage(
-                    id=page.id,
-                    title=page.title,
-                    slug=page.slug,
-                    space_key=page.space.key,
-                    space_name=page.space.name,
-                )
-                for page in related
-            ],
+            related=related_items,
+            done=True,
+            max_questions=MAX_QUESTIONS,
         )
 
     async def draft_page(self, key: str, payload: PageDraftRequest) -> PageDraft:
-        """A first draft of a new page from a short description; nothing is saved."""
+        """A draft of a new page from description, Q&A decisions, or revision feedback."""
         config, _space = await self._creator_config(key)
         instructions = await page_draft_instructions(self.session)
         parts: list[str] = []
@@ -318,18 +383,34 @@ class AIService:
         if payload.answers:
             parts += ["<answers>", *(f"- {a.question}: {a.answer}" for a in payload.answers)]
             parts.append("</answers>")
-        parts.append(wiki_context(await self._readable_pages(payload.related_ids)))
+        parts.append(wiki_context(await self._readable_pages(payload.related_ids), 600))
+        revising = bool(
+            payload.previous_draft.strip() and payload.revision_instruction.strip()
+        )
+        if revising:
+            parts += [
+                "<previous_draft>",
+                payload.previous_draft.strip(),
+                "</previous_draft>",
+                "<revision_instruction>",
+                payload.revision_instruction.strip(),
+                "</revision_instruction>",
+            ]
+        detail = payload.detail if payload.detail in PAGE_DRAFT_TOKENS else "detailed"
         reply = await self._chat(
             "draft",
             config,
             [
-                {"role": "system", "content": page_draft_system_prompt(instructions)},
+                {
+                    "role": "system",
+                    "content": page_draft_system_prompt(instructions, detail, revising=revising),
+                },
                 {
                     "role": "user",
                     "content": "\n".join(part for part in parts if part),
                 },
             ],
-            max_tokens=4000,
+            max_tokens=PAGE_DRAFT_TOKENS[detail],
         )
         title, body = split_title(reply, payload.title)
         if not body.strip():
@@ -337,6 +418,7 @@ class AIService:
         return PageDraft(
             title=title or payload.title.strip() or payload.prompt.strip()[:80],
             content=draft_to_html(body, payload.lang),
+            markdown=body.strip(),
         )
 
     async def assist_writing(self, key: str, payload: AssistRequest) -> AssistResult:

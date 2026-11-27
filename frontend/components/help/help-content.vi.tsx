@@ -4810,19 +4810,22 @@ export const sectionsVi: HelpSection[] = [
         <p className="mt-3">
           <strong>Tạo page bằng AI</strong>: trong <Code>Create page</Code>, bấm{" "}
           <Code>Viết bằng AI</Code> (hoặc sau khi gõ vài chữ ở tab <Code>Tự viết</Code>, bấm{" "}
-          <Code>Nhờ AI soạn</Code> để dùng chúng làm mô tả), mô tả page trong một hai câu rồi bấm{" "}
-          <Code>Tạo nội dung</Code>. AI tìm trước trong wiki các page liên quan bạn đọc được - liệt
-          kê ở bên phải - và có thể hỏi vài câu trắc nghiệm, mỗi lần một câu: chọn một đáp án (rê
-          chuột vào nút <Code>i</Code> của lựa chọn để xem chi tiết), chọn nhiều nếu được phép hoặc
-          tự nhập câu trả lời, hay bấm <Code>Bỏ qua câu hỏi</Code>. Câu trả lời được thêm vào mô tả
-          để bạn thấy và sửa được những gì bản nháp dựa vào. WikiHub soạn cả page theo đúng định
-          dạng của mình - tiêu đề, danh sách, checklist, bảng và khối mã - tự điền tiêu đề nếu đang
-          trống và hiện bản xem trước có thể phóng to. Dòng ghi chú ở trên cùng cho biết page do AI
-          tạo để người đọc biết cần kiểm tra lại. Chưa có gì được lưu cho đến khi bạn bấm{" "}
-          <Code>Create page</Code>; dùng <Code>Tạo lại</Code> để thử lần nữa hoặc{" "}
-          <Code>Bỏ bản nháp</Code> để làm lại, và sau đó vẫn chỉnh sửa page thoải mái. Chỉ người
-          được phép tạo page trong space mới dùng được. Khi chưa kết nối AI, tab này giải thích
-          còn thiếu gì.
+          <Code>Nhờ AI soạn</Code> để dùng chúng làm mô tả), chọn <Code>Chế độ hỏi</Code> (mặc định{" "}
+          <Code>Đào sâu</Code> để hỏi từng câu theo nhánh, hoặc <Code>Nhanh</Code> để viết thẳng
+          ngay) và <Code>Độ chi tiết</Code> (<Code>Gọn</Code>, <Code>Tiêu chuẩn</Code> hoặc{" "}
+          <Code>Chi tiết</Code>), rồi mô tả page và bấm <Code>Tạo nội dung</Code>. Ở chế độ{" "}
+          <Code>Đào sâu</Code>, AI tìm các page liên quan trong wiki rồi phỏng vấn từng câu một
+          theo từng nhánh thiết kế, gắn nhãn gợi ý <Code>Khuyến nghị</Code> và tổng hợp{" "}
+          <Code>Các ý đã chốt</Code> ở cột phải để bạn có thể sửa lại bất kỳ câu nào hoặc bấm{" "}
+          <Code>Đủ rồi, viết ngay</Code> lúc nào cũng được. WikiHub soạn page đầy đủ theo đúng bộ
+          định dạng của trình soạn thảo - mục lục tự động, tiêu đề, callout màu, khối toggle thu
+          gọn, status badge, sơ đồ Mermaid, checklist, bảng và khối mã - tự điền tiêu đề nếu đang
+          trống và cho phép bạn nhập yêu cầu <Code>Chỉnh sửa</Code> ngay dưới khung xem trước. Dòng
+          ghi chú ở trên cùng cho biết page do AI tạo để người đọc biết cần kiểm tra lại. Chưa có
+          gì được lưu cho đến khi bạn bấm <Code>Create page</Code>; dùng <Code>Tạo lại</Code> hoặc{" "}
+          <Code>Chỉnh sửa</Code> để tinh chỉnh, <Code>Bỏ bản nháp</Code> để làm lại, và sau đó vẫn
+          chỉnh sửa page thoải mái. Chỉ người được phép tạo page trong space mới dùng được. Khi chưa
+          kết nối AI, tab này giải thích còn thiếu gì.
         </p>
         <Screenshot
           src="/help/ai-create-describe.png"

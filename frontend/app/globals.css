@@ -1617,6 +1617,29 @@ html[data-export="true"] .mermaid-render-output {
   cursor: default !important;
 }
 
+/* Prevent wide horizontal content (oversized/resized images, wide diagrams,
+   figures, or media inside table cells) from overflowing and getting clipped
+   at the right edge of exported PDF/HTML pages. */
+html[data-export="true"] .wikihub-reader,
+html[data-export="true"] .wikihub-reader .ProseMirror {
+  max-width: 100% !important;
+  overflow-wrap: break-word;
+}
+html[data-export="true"] .wikihub-reader [data-node-view-wrapper],
+html[data-export="true"] .wikihub-reader figure,
+html[data-export="true"] .wikihub-reader [data-type="diagram"],
+html[data-export="true"] .wikihub-reader .mermaid-render-output {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+html[data-export="true"] .wikihub-reader img,
+html[data-export="true"] .wikihub-reader svg,
+html[data-export="true"] .wikihub-reader canvas,
+html[data-export="true"] .wikihub-reader video {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
 /* Keep editor/reader paragraph margins from distorting Mermaid foreignObject
    labels, and give edge labels an opaque background so connector paths don't
    strike through label text. */
@@ -1716,6 +1739,14 @@ html[data-export="true"] .wikihub-reader td p:last-child {
     white-space: pre-wrap !important;
     overflow-wrap: anywhere !important;
     overflow: visible !important;
+  }
+
+  html[data-export="true"] .wikihub-reader img,
+  html[data-export="true"] .wikihub-reader svg {
+    max-width: 100% !important;
+    max-height: 245mm !important;
+    height: auto !important;
+    object-fit: contain !important;
   }
 
   /* Mirrors the margin passed to page.pdf() in export_service.py so both

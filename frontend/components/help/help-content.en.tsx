@@ -4684,20 +4684,23 @@ export const sectionsEn: HelpSection[] = [
         <p className="mt-3">
           <strong>Create a page with AI</strong>: in <Code>Create page</Code>, click{" "}
           <Code>Write with AI</Code> (or, after typing a few words in <Code>Write</Code>,{" "}
-          <Code>Draft it with AI</Code> to use them as the description), describe the page in a
-          sentence or two and click <Code>Generate</Code>. The AI first searches the wiki for
-          related pages you can read - they are listed on the right - and may ask a few
-          multiple-choice questions, one at a time: pick an option (hover its <Code>i</Code> button
-          for the detail), tick several where allowed or write your own answer, or choose{" "}
-          <Code>Skip questions</Code>. Your answers are added to the description so you can see
-          and edit what the draft is built from. WikiHub then drafts the whole page in its own
-          format - headings, lists, checklists, tables and code blocks - fills in the title if it
-          is empty and shows a preview you can enlarge. A notice at the very top says the page was
-          written by AI, so readers know to check it. Nothing is saved until you click{" "}
-          <Code>Create page</Code>; use <Code>Regenerate</Code> for another try or{" "}
-          <Code>Discard</Code> to start over, and edit the page freely afterwards. Only people who
-          may create pages in the space can use it. Until AI is connected, the tab explains what
-          is missing instead.
+          <Code>Draft it with AI</Code> to use them as the description), pick the{" "}
+          <Code>Interview</Code> mode (<Code>Deep (Grill-me)</Code> by default to clarify
+          branches one question at a time, or <Code>Quick</Code> to draft immediately) and{" "}
+          <Code>Detail</Code> level (<Code>Brief</Code>, <Code>Standard</Code> or{" "}
+          <Code>Detailed</Code>), then describe the page and click <Code>Generate</Code>. In{" "}
+          <Code>Deep (Grill-me)</Code> mode, the AI searches the wiki for related pages and walks
+          through the decision tree one question per turn, marking recommended options and
+          recording settled decisions on the right so you can rewind any answer or click{" "}
+          <Code>Enough, write now</Code> at any time. WikiHub drafts the full page using its native
+          blocks - a table of contents, headings, callouts, collapsible toggles, status badges,
+          Mermaid workflow diagrams, checklists, tables and code blocks - fills in the title if
+          blank, and lets you ask for quick adjustments directly below the preview. A notice at the
+          very top says the page was written by AI, so readers know to check it. Nothing is saved
+          until you click <Code>Create page</Code>; use <Code>Regenerate</Code> or{" "}
+          <Code>Refine</Code> to iterate, <Code>Discard</Code> to start over, and edit the page
+          freely afterwards. Only people who may create pages in the space can use it. Until AI is
+          connected, the tab explains what is missing instead.
         </p>
         <Screenshot
           src="/help/ai-create-describe.png"

@@ -80,9 +80,12 @@ export function aiStatus(): Promise<AiStatus> {
   return statusRequest;
 }
 
-export type PageDraft = { title: string; content: string };
+export type ClarifyMode = "quick" | "deep";
+export type PageDetailLevel = "brief" | "normal" | "detailed";
 
-/** Ask the AI for a first draft of a new page; nothing is saved until it is created. */
+export type PageDraft = { title: string; content: string; markdown?: string };
+
+/** Ask the AI for a draft (or refined revision) of a new page; nothing is saved until it is created. */
 export function draftPage(
   spaceKey: string,
   body: {
@@ -91,6 +94,9 @@ export function draftPage(
     lang: string;
     answers?: PageAnswer[];
     related_ids?: string[];
+    detail?: PageDetailLevel;
+    previous_draft?: string;
+    revision_instruction?: string;
   },
 ): Promise<PageDraft> {
   return api.post<PageDraft>(
@@ -103,16 +109,18 @@ export type ClarifyOption = {
   label: string;
   description: string;
   detail?: string;
+  recommended?: boolean;
 };
 
 export type ClarifyQuestion = {
   header: string;
   question: string;
+  rationale?: string;
   multi_select: boolean;
   options: ClarifyOption[];
 };
 
-export type PageAnswer = { question: string; answer: string };
+export type PageAnswer = { header?: string; question: string; answer: string };
 
 export type RelatedPage = {
   id: string;
@@ -125,12 +133,22 @@ export type RelatedPage = {
 export type PageClarify = {
   questions: ClarifyQuestion[];
   related: RelatedPage[];
+  done?: boolean;
+  summary?: string;
+  max_questions?: number;
 };
 
-/** Look the request up in the wiki and get the questions the AI wants answered. */
+/** Look the request up in the wiki and get the next clarifying question(s). */
 export function clarifyPage(
   spaceKey: string,
-  body: { prompt: string; title: string; lang: string },
+  body: {
+    prompt: string;
+    title: string;
+    lang: string;
+    mode?: ClarifyMode;
+    answers?: PageAnswer[];
+    related_ids?: string[];
+  },
 ): Promise<PageClarify> {
   return api.post<PageClarify>(
     `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/clarify`,
