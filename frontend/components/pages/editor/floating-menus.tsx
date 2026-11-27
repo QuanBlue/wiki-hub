@@ -1,22 +1,29 @@
 "use client";
 
-import { type Transaction } from "@tiptap/pm/state";
-import { type Editor } from "@tiptap/react";
+import { NodeSelection, type Transaction } from "@tiptap/pm/state";
+import { useEditorState, type Editor } from "@tiptap/react";
 import {
+  Bold,
   Check,
   ChevronDown,
+  Code2,
   Eraser,
+  Italic,
+  Link2,
   Pencil,
   Plus,
   BetweenHorizontalEnd,
   BetweenVerticalEnd,
+  RemoveFormatting,
   SquareSplitHorizontal,
+  Strikethrough,
   Table2,
   TableCellsMerge,
   Trash2,
   Sparkles,
   ExternalLink,
   Copy,
+  Underline,
   Unlink,
 } from "lucide-react";
 import {
@@ -32,6 +39,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
@@ -48,7 +56,14 @@ import { cn } from "@/lib/utils";
 
 import { TABLE_COLUMN_HOVER_KEY } from "./table-extensions";
 import { TableBorderMenu } from "./table-border-menu";
-import { CellColorMenu, TableActionButton } from "./toolbar-controls";
+import {
+  AlignmentMenu,
+  CellColorMenu,
+  ColorMenu,
+  HeadingMenu,
+  TableActionButton,
+  ToolbarButton,
+} from "./toolbar-controls";
 
 type TableMenuPosition = { left: number; top: number };
 
@@ -217,10 +232,10 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
       if (!editor.isEditable) return;
       const cell = targetElement(event.target)?.closest("td, th");
       if (!cell || !editor.view.dom.contains(cell)) return;
-      event.preventDefault();
-      if (!editor.isFocused) editor.view.focus();
       // Preserve an existing multi-cell selection or active range under the cursor;
-      // otherwise focus the right-clicked cell.
+      // otherwise focus the right-clicked cell. When a non-empty text range is
+      // selected inside a cell, defer to SelectionFormatMenu so the user gets
+      // text formatting at the cursor while TableActionsMenu stays docked below.
       const sel = editor.state.selection;
       if (!("$anchorCell" in sel)) {
         const coords = editor.view.posAtCoords({
@@ -229,13 +244,19 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
         });
         const insideSelection =
           !sel.empty &&
+          !(sel instanceof NodeSelection) &&
           coords != null &&
           coords.pos >= sel.from &&
           coords.pos <= sel.to;
-        if (!insideSelection && coords && coords.pos >= 0) {
+        if (insideSelection) {
+          return;
+        }
+        if (coords && coords.pos >= 0) {
           editor.commands.setTextSelection(coords.pos);
         }
       }
+      event.preventDefault();
+      if (!editor.isFocused) editor.view.focus();
       setContextMenuPos({
         left: Math.max(8, Math.min(event.clientX, window.innerWidth - 360)),
         top: Math.max(8, Math.min(event.clientY, window.innerHeight - 52)),
@@ -522,6 +543,7 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
             <Trash2 />
             <span>{t("editor.deleteColumn")}</span>
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             destructive
             onClick={() => {
@@ -536,6 +558,249 @@ export function TableActionsMenu({ editor }: { editor: Editor | null }) {
       </DropdownMenu>
       </div>
     </TooltipProvider>
+  );
+}
+
+/**
+ * Right-click text formatting toolbar shown when the user selects text in edit
+ * mode and opens the context menu, mirroring the main header's formatting
+ * controls at the cursor so the user does not have to glance up to the top bar.
+ */
+export function SelectionFormatMenu({ editor }: { editor: Editor | null }) {
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(
+    null,
+  );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
+
+  const marks = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => ({
+      bold: currentEditor?.isActive("bold") ?? false,
+      italic: currentEditor?.isActive("italic") ?? false,
+      underline: currentEditor?.isActive("underline") ?? false,
+      strike: currentEditor?.isActive("strike") ?? false,
+      code: currentEditor?.isActive("code") ?? false,
+      link: currentEditor?.isActive("link") ?? false,
+    }),
+  });
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const targetElement = (target: EventTarget | null): Element | null =>
+      target instanceof Element
+        ? target
+        : target instanceof Node
+          ? target.parentElement
+          : null;
+
+    const hasTextSelection = () => {
+      const sel = editor.state.selection;
+      return (
+        !sel.empty &&
+        !(sel instanceof NodeSelection) &&
+        !("$anchorCell" in sel)
+      );
+    };
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!editor.isEditable || event.button !== 2 || !hasTextSelection()) {
+        return;
+      }
+      // Keep the browser from collapsing the active text selection before
+      // `contextmenu` fires.
+      event.preventDefault();
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+      if (!editor.isEditable || event.defaultPrevented || !hasTextSelection()) {
+        return;
+      }
+      const target = targetElement(event.target);
+      if (!target || !editor.view.dom.contains(target)) return;
+      // Don't hijack right-clicks on images or attachment tiles.
+      if (target.closest("img, [data-attachment], .attachment-link")) return;
+
+      event.preventDefault();
+      if (!editor.isFocused) editor.view.focus();
+      setPosition({
+        left: Math.max(8, Math.min(event.clientX, window.innerWidth - 460)),
+        top: Math.max(8, Math.min(event.clientY + 8, window.innerHeight - 56)),
+      });
+    };
+
+    const handleSelectionUpdate = () => {
+      if (!hasTextSelection()) setPosition(null);
+    };
+
+    const handleOutsidePointer = (event: PointerEvent) => {
+      const target = targetElement(event.target);
+      if (
+        containerRef.current?.contains(target) ||
+        target?.closest('[role="menu"], [data-radix-menu-content]')
+      ) {
+        return;
+      }
+      setPosition(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPosition(null);
+    };
+
+    const handleViewportChange = () => setPosition(null);
+
+    const dom = editor.view.dom;
+    dom.addEventListener("mousedown", handleMouseDown, true);
+    dom.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    document.addEventListener("keydown", handleKeyDown);
+    editor.on("selectionUpdate", handleSelectionUpdate);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      dom.removeEventListener("mousedown", handleMouseDown, true);
+      dom.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("pointerdown", handleOutsidePointer);
+      document.removeEventListener("keydown", handleKeyDown);
+      editor.off("selectionUpdate", handleSelectionUpdate);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("wikihub:selection-format-menu", {
+        detail: { open: position !== null },
+      }),
+    );
+    return () => {
+      if (position !== null) {
+        window.dispatchEvent(
+          new CustomEvent("wikihub:selection-format-menu", {
+            detail: { open: false },
+          }),
+        );
+      }
+    };
+  }, [position]);
+
+  if (!position || !editor) return null;
+
+  return (
+    <div
+      ref={containerRef}
+      className="border-border bg-surface-raised fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded-lg border p-1 shadow-lg"
+      style={position}
+      role="toolbar"
+      aria-label={t("editor.textFormattingAria")}
+      onMouseDown={(event) => {
+        if ((event.target as HTMLElement).closest("button")) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={t("ai.writing.button")}
+        title={t("ai.writing.button")}
+        className="text-primary [&:not(:disabled)]:hover:text-primary"
+        onClick={() => {
+          setPosition(null);
+          window.dispatchEvent(
+            new CustomEvent("wikihub:ai-assist", {
+              detail: { mode: "prompt" },
+            }),
+          );
+        }}
+      >
+        <Sparkles aria-hidden />
+      </Button>
+      <span aria-hidden className="bg-border mx-0.5 h-5 w-px shrink-0" />
+      <HeadingMenu editor={editor} />
+      <span aria-hidden className="bg-border mx-0.5 h-5 w-px shrink-0" />
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.bold")}
+        active={marks?.bold}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+      >
+        <Bold />
+      </ToolbarButton>
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.italic")}
+        active={marks?.italic}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+      >
+        <Italic />
+      </ToolbarButton>
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.underline")}
+        active={marks?.underline}
+        onClick={() => editor.chain().focus().toggleMark("underline").run()}
+      >
+        <Underline />
+      </ToolbarButton>
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.strikethrough")}
+        active={marks?.strike}
+        onClick={() => editor.chain().focus().toggleStrike().run()}
+      >
+        <Strikethrough />
+      </ToolbarButton>
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.inlineCode")}
+        active={marks?.code}
+        onClick={() => editor.chain().focus().toggleCode().run()}
+      >
+        <Code2 />
+      </ToolbarButton>
+      <ColorMenu editor={editor} kind="text" compact />
+      <ColorMenu editor={editor} kind="highlight" compact />
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.clearTextColourHighlight")}
+        onClick={() => {
+          const markType = editor.schema.marks.textStyle;
+          if (!markType) return;
+          const { from, to } = editor.state.selection;
+          if (from === to) {
+            editor.commands.unsetMark("textStyle", {
+              extendEmptyMarkRange: true,
+            });
+          } else {
+            editor.view.dispatch(
+              editor.state.tr.removeMark(from, to, markType),
+            );
+            editor.view.focus();
+          }
+        }}
+      >
+        <RemoveFormatting />
+      </ToolbarButton>
+      <span aria-hidden className="bg-border mx-0.5 h-5 w-px shrink-0" />
+      <AlignmentMenu editor={editor} />
+      <ToolbarButton
+        editor={editor}
+        label={t("editor.addLink")}
+        active={marks?.link}
+        onClick={() => {
+          setPosition(null);
+          window.dispatchEvent(new CustomEvent("wikihub:open-link-dialog"));
+        }}
+      >
+        <Link2 />
+      </ToolbarButton>
+    </div>
   );
 }
 

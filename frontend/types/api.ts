@@ -844,6 +844,32 @@ export interface EffectiveSpacePermissions {
   visibility: SpaceVisibility;
 }
 
+export type PageStatus =
+  | "draft"
+  | "in_progress"
+  | "verified"
+  | "outdated"
+  | "archived";
+
+export interface PageCustomProperty {
+  key: string;
+  value: string;
+}
+
+export interface PagePropertiesOwner {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar_url?: string | null;
+}
+
+export interface PageProperties {
+  status?: PageStatus | null;
+  owner_id?: string | null;
+  owner?: PagePropertiesOwner | null;
+  custom?: PageCustomProperty[];
+}
+
 export interface WikiPage {
   id: string;
   space_id: string;
@@ -875,6 +901,7 @@ export interface WikiPage {
   inherit_restrictions?: boolean;
   is_watched?: boolean;
   watch_descendants?: boolean;
+  properties?: PageProperties;
 }
 
 export interface PageWatchRead {

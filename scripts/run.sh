@@ -374,7 +374,10 @@ elif [[ ${CLEAN_FRONTEND:-0} -eq 1 ]]; then
     # on the host bind mount, so it survived the very reset that was meant to
     # clear it. Leaving it behind is what this flag exists to avoid: a build
     # cache compiled against the node_modules that was just deleted.
-    rm -rf "$ROOT/frontend/.next"
+    if [[ -d "$ROOT/frontend/.next" ]]; then
+        rm -rf "$ROOT/frontend/.next" 2>/dev/null \
+            || docker run --rm -v "$ROOT/frontend:/target" busybox rm -rf /target/.next
+    fi
     ok "frontend volumes and Next.js cache removed"
 fi
 

@@ -1,9 +1,11 @@
 "use client";
 
 import { Plus, Share2, Tag, ThumbsUp } from "lucide-react";
+import { useState } from "react";
 import { LikersPopover } from "@/components/comments/likers-popover";
 import { PageComments, type CommentsUser } from "@/components/comments/page-comments";
 import { PagePresence } from "@/components/pages/page-presence";
+import { PagePropertiesInfoButton } from "@/components/pages/page-properties-bar";
 import { RichTextContent } from "@/components/pages/rich-text-editor";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
@@ -13,6 +15,7 @@ import type {
   PageLabel,
   PresenceUser,
   Space,
+  SpaceMember,
   WikiPage,
 } from "@/types/api";
 import { formatDateAndTime } from "./content-transforms";
@@ -21,6 +24,7 @@ import { MarkdownContent } from "./workspace-primitives";
 
 export type PageReaderPaneProps = {
   space: Space;
+  members: SpaceMember[];
   currentPage?: WikiPage | null;
   currentUser?: CommentsUser;
   title: string;
@@ -39,10 +43,12 @@ export type PageReaderPaneProps = {
   onToggleLiked: () => Promise<void>;
   onOpenLabelsDialog: () => void;
   onOpenShareDialog: () => void;
+  onPagePropertiesUpdated?: (updated: WikiPage) => void;
 };
 
 export function PageReaderPane({
   space,
+  members,
   currentPage,
   currentUser,
   title,
@@ -61,17 +67,31 @@ export function PageReaderPane({
   onToggleLiked,
   onOpenLabelsDialog,
   onOpenShareDialog,
+  onPagePropertiesUpdated,
 }: PageReaderPaneProps) {
   const { t, locale } = useTranslation();
   const liked = likeStatus.liked_by_me;
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
 
   return (
     <>
       <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
             {title}
           </h1>
+          {currentPage ? (
+            <PagePropertiesInfoButton
+              spaceKey={space.key}
+              page={currentPage}
+              members={members}
+              canEdit={canEdit && space.status === "active"}
+              onUpdated={onPagePropertiesUpdated}
+              open={propertiesOpen}
+              onOpenChange={setPropertiesOpen}
+              align="start"
+            />
+          ) : null}
         </div>
         {currentPage ? (
           <PagePresence users={activeUsers} className="shrink-0 pt-1" />

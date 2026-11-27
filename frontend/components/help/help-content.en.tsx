@@ -900,6 +900,29 @@ export const sectionsEn: HelpSection[] = [
           the middle of the screen and highlights it for a moment. This works even if you are
           already on that page. Comments are included in backups and restores.
         </p>
+
+        <h4 className="mt-4 text-sm font-semibold">
+          Page properties, child pages &amp; editor power blocks
+        </h4>
+        <ul className="mt-1.5 list-disc space-y-1.5 pl-5 text-sm">
+          <li>
+            <strong>Page properties</strong>: Editors can click the status badge or info icon
+            beside a page title to set a shared <strong>Status</strong> (Draft, In Progress,
+            Verified, Outdated, Archived), <strong>Owner</strong>, and custom key-value fields.
+          </li>
+          <li>
+            <strong>Child pages report (<code>/child-pages</code>)</strong>: Insert a live table or
+            hierarchical tree of sub-pages with their properties, status filter, and sorting.
+          </li>
+          <li>
+            <strong>Inline triggers &amp; blocks</strong>: Type <code>@</code> in the editor to
+            mention a teammate (sends a notification on save) or insert a date chip (
+            <code>@today</code>); type <code>[[</code> to quickly link another page; use{" "}
+            <code>/status</code> for colored inline status badges, <code>/math</code> or{" "}
+            <code>$...$</code> for KaTeX formulas, and <code>/whiteboard</code> for an interactive
+            SVG drawing canvas.
+          </li>
+        </ul>
       </>
     ),
   },

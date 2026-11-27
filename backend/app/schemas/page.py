@@ -15,6 +15,35 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 #: still be edited and saved without a validation failure.
 MAX_PAGE_CONTENT_CHARS = 2_500_000
 
+PageStatus = Literal["draft", "in_progress", "verified", "outdated", "archived"]
+
+
+class PageCustomProperty(BaseModel):
+    key: str = Field(min_length=1, max_length=80)
+    value: str = Field(default="", max_length=300)
+
+    @field_validator("key", "value")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip()
+
+
+class PagePropertiesOwner(BaseModel):
+    id: uuid.UUID
+    username: str
+    full_name: str
+    avatar_url: str | None = None
+
+
+class PageProperties(BaseModel):
+    status: PageStatus | None = None
+    owner_id: uuid.UUID | None = None
+    custom: list[PageCustomProperty] = Field(default_factory=list, max_length=20)
+
+
+class PagePropertiesRead(PageProperties):
+    owner: PagePropertiesOwner | None = None
+
 
 class PageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -50,6 +79,7 @@ class PageRead(BaseModel):
     inherit_restrictions: bool = True
     is_watched: bool = False
     watch_descendants: bool = False
+    properties: PagePropertiesRead = Field(default_factory=PagePropertiesRead)
 
 
 class PageRecentItem(BaseModel):
@@ -98,6 +128,7 @@ class PageCreate(BaseModel):
     parent_id: uuid.UUID | None = None
     template_id: str | None = Field(default=None, max_length=128)
     template_lang: Literal["en", "vi"] = "en"
+    properties: PageProperties | None = None
 
 
 class PageMove(BaseModel):
@@ -112,6 +143,7 @@ class PageUpdate(BaseModel):
     change_summary: str | None = Field(default=None, max_length=255)
     base_updated_at: datetime | None = None
     force: bool = False
+    properties: PageProperties | None = None
 
 
 class PageWatchRead(BaseModel):

@@ -345,9 +345,21 @@ describe("table actions", () => {
     const { editor, user } = await inTable();
 
     await user.click(screen.getByRole("button", { name: /^Delete$/ }));
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Delete table" }),
-    );
+    const deleteColumn = await screen.findByRole("menuitem", {
+      name: "Delete column",
+    });
+    const deleteTable = screen.getByRole("menuitem", { name: "Delete table" });
+    const separator = screen.getByRole("separator");
+    expect(
+      deleteColumn.compareDocumentPosition(separator) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      separator.compareDocumentPosition(deleteTable) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await user.click(deleteTable);
     expect(editor.getHTML()).not.toContain("<table");
   });
 
@@ -723,5 +735,137 @@ describe("removing a link from the hover toolbar", () => {
     );
     expect(html).toContain('href="/first"');
     expect(html).not.toContain("/second");
+  });
+});
+
+describe("right-click text formatting menu", () => {
+  it("opens on right-click when text is selected and applies formatting", async () => {
+    const { editor, dom, user } = await renderEditor("<p>Hello world</p>");
+    const paragraph = dom.querySelector("p")!;
+
+    // Right-clicking with a collapsed caret does not hijack the native menu.
+    act(() => {
+      editor.commands.setTextSelection(2);
+    });
+    const emptyCtx = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 100,
+      clientY: 120,
+    });
+    act(() => {
+      paragraph.dispatchEvent(emptyCtx);
+    });
+    expect(emptyCtx.defaultPrevented).toBe(false);
+    expect(
+      screen.queryByRole("toolbar", { name: "Text formatting" }),
+    ).toBeNull();
+
+    // Selecting text and right-clicking opens the floating formatting bar.
+    act(() => {
+      editor.commands.setTextSelection({ from: 1, to: 6 });
+    });
+    const mouseDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      clientX: 120,
+      clientY: 140,
+    });
+    act(() => {
+      paragraph.dispatchEvent(mouseDown);
+    });
+    expect(mouseDown.defaultPrevented).toBe(true);
+
+    const formatEvents: boolean[] = [];
+    const onFormatEvent = (event: Event) => {
+      formatEvents.push(
+        Boolean((event as CustomEvent<{ open?: boolean }>).detail?.open),
+      );
+    };
+    window.addEventListener("wikihub:selection-format-menu", onFormatEvent);
+
+    const ctx = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+      clientY: 140,
+    });
+    act(() => {
+      paragraph.dispatchEvent(ctx);
+    });
+    expect(ctx.defaultPrevented).toBe(true);
+
+    const toolbar = await screen.findByRole("toolbar", {
+      name: "Text formatting",
+    });
+    expect(toolbar).toBeInTheDocument();
+    expect(formatEvents.at(-1)).toBe(true);
+    expect(
+      toolbar.querySelector('button[aria-label="Writing assistant"]'),
+    ).not.toBeNull();
+
+    await user.click(
+      toolbar.querySelector('button[aria-label="Bold"]') as HTMLButtonElement,
+    );
+    expect(editor.getHTML()).toContain("<strong>Hello</strong>");
+
+    await user.click(
+      toolbar.querySelector('button[aria-label="Italic"]') as HTMLButtonElement,
+    );
+    expect(editor.getHTML()).toContain("<em>Hello</em>");
+
+    await user.click(
+      toolbar.querySelector(
+        'button[aria-label="Inline code"]',
+      ) as HTMLButtonElement,
+    );
+    expect(editor.getHTML()).toContain("<code>");
+
+    // Escape dismisses the menu and notifies WritingAssistant to restore its trigger.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("toolbar", { name: "Text formatting" }),
+      ).toBeNull(),
+    );
+    expect(formatEvents.at(-1)).toBe(false);
+    window.removeEventListener("wikihub:selection-format-menu", onFormatEvent);
+  });
+
+  it("defers to text formatting when right-clicking selected text inside a table cell", async () => {
+    const { editor, dom } = await renderEditor(
+      "<table><tbody><tr><td><p>hello cell</p></td><td><p>two</p></td></tr></tbody></table>",
+    );
+    let cellPos = 0;
+    editor.state.doc.descendants((node, pos) => {
+      if (!cellPos && node.type.name === "tableCell") cellPos = pos;
+    });
+    const from = cellPos + 2;
+    const to = cellPos + 7;
+    act(() => {
+      dom.focus();
+      editor.commands.setTextSelection({ from, to });
+    });
+
+    vi.spyOn(editor.view, "posAtCoords").mockReturnValue({
+      pos: from + 1,
+      inside: cellPos + 1,
+    });
+
+    const td = dom.querySelector("td")!;
+    const ctx = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 150,
+      clientY: 160,
+    });
+    act(() => {
+      td.dispatchEvent(ctx);
+    });
+    expect(ctx.defaultPrevented).toBe(true);
+    expect(
+      await screen.findByRole("toolbar", { name: "Text formatting" }),
+    ).toBeInTheDocument();
   });
 });

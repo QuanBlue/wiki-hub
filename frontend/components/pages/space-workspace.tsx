@@ -19,6 +19,8 @@ import { SystemAnnouncementBanner } from "@/components/layout/system-announcemen
 import { PageContentLoading } from "@/components/pages/page-content-loading";
 import { usePageRelated } from "@/components/pages/related-pages";
 import { RichTextEditor } from "@/components/pages/rich-text-editor";
+import { setInlineSuggestionContext } from "@/components/pages/editor/inline-suggestions";
+import { EditorSpacePageProvider } from "@/components/pages/editor/page-context";
 import { Button } from "@/components/ui/button";
 import { api, describeApiError } from "@/lib/api-client";
 import { downloadFile } from "@/lib/download";
@@ -160,6 +162,25 @@ export function SpaceWorkspace({
   const [publicShareDialogOpen, setPublicShareDialogOpen] = useState(false);
   const [publicSharesEnabled, setPublicSharesEnabled] = useState(true);
   const [trashDays, setTrashDays] = useState(30);
+
+  const editorSpacePageContext = useMemo(
+    () => ({
+      spaceKey: space.key,
+      currentPageId: currentPage?.id ?? null,
+      currentPageSlug: currentPage?.slug ?? null,
+      pages,
+    }),
+    [space.key, currentPage?.id, currentPage?.slug, pages],
+  );
+
+  useEffect(() => {
+    setInlineSuggestionContext({
+      spaceKey: space.key,
+      pageSlug: currentPage?.slug ?? null,
+      pages,
+    });
+    return () => setInlineSuggestionContext(null);
+  }, [space.key, currentPage?.slug, pages]);
 
   useEffect(() => {
     let active = true;
@@ -834,6 +855,7 @@ export function SpaceWorkspace({
             </div>
           ) : null}
 
+          <EditorSpacePageProvider value={editorSpacePageContext}>
           <article
             className={cn(
               "mt-4 wikihub-page-content",
@@ -902,6 +924,7 @@ export function SpaceWorkspace({
             ) : (
               <PageReaderPane
                 space={space}
+                members={members}
                 currentPage={currentPage}
                 currentUser={currentUser}
                 title={title}
@@ -920,9 +943,11 @@ export function SpaceWorkspace({
                 onToggleLiked={toggleLiked}
                 onOpenLabelsDialog={() => setLabelsDialogOpen(true)}
                 onOpenShareDialog={() => setShareDialogOpen(true)}
+                onPagePropertiesUpdated={() => router.refresh()}
               />
             )}
           </article>
+          </EditorSpacePageProvider>
 
           <WorkspaceDialogs
             space={space}

@@ -341,9 +341,11 @@ export function ColorPaletteContent({
 export function ColorMenu({
   editor,
   kind,
+  compact = false,
 }: {
   editor: Editor | null;
   kind: "text" | "highlight";
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const isText = kind === "text";
@@ -382,7 +384,10 @@ export function ColorMenu({
           aria-label={label}
           title={label}
           disabled={!editor}
-          className={cn("h-8 gap-1.5 px-2", currentValue && TOGGLE_ON_CLASS)}
+          className={cn(
+            compact ? "h-8 gap-0.5 px-1.5" : "h-8 gap-1.5 px-2",
+            currentValue && TOGGLE_ON_CLASS,
+          )}
         >
           <span className="relative flex flex-col items-center">
             <Icon className="size-4" aria-hidden />
@@ -394,8 +399,8 @@ export function ColorMenu({
               />
             ) : null}
           </span>
-          <span>{label}</span>
-          <ChevronDown className="size-3.5" />
+          {compact ? null : <span>{label}</span>}
+          <ChevronDown className={compact ? "size-3 opacity-70" : "size-3.5"} />
         </Button>
       </DropdownMenuTrigger>
       <ColorPaletteContent

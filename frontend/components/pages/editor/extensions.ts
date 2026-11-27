@@ -8,6 +8,7 @@ import { lowlight } from "@/lib/code-highlight";
 import { SlashCommand } from "@/components/pages/slash-command";
 
 import { AttachmentNode } from "./attachment-node";
+import { ChildPagesNode } from "./child-pages-node";
 import { CustomCodeBlock } from "./code-block";
 import { headingLevels } from "./content-normalize";
 import {
@@ -29,7 +30,19 @@ import {
   TextStyleMark,
   UnderlineMark,
 } from "./custom-extensions";
+import {
+  InlineMentionSuggestion,
+  WikiLinkSuggestion,
+} from "./inline-suggestions";
+import {
+  BlockMathNode,
+  DateChipNode,
+  InlineMathNode,
+  StatusBadgeNode,
+  UserMentionNode,
+} from "./power-nodes";
 import { ResizableImage } from "./resizable-image";
+import { WhiteboardNode } from "@/components/pages/whiteboard-block";
 import {
   TABLE_CELL_MIN_WIDTH,
   TableCellDragSelection,
@@ -91,7 +104,16 @@ export function buildEditorExtensions({
     CustomToggleContentNode,
     CustomToggleNode,
     TableOfContentsNode,
+    ChildPagesNode,
     DiagramNode,
+    WhiteboardNode,
+    StatusBadgeNode,
+    InlineMathNode,
+    BlockMathNode,
+    UserMentionNode,
+    DateChipNode,
+    InlineMentionSuggestion,
+    WikiLinkSuggestion,
     StyledListItem,
     TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
     TaskItem.configure({ nested: true }),
