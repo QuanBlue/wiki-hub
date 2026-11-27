@@ -14,17 +14,22 @@ vi.mock("@/components/seasonal/seasonal-sidebar-overlay", () => ({
 }));
 
 const BASE_SPACE: Space = {
-  id: 1,
+  id: "1",
   key: "ENG",
   name: "Engineering",
   description: "",
-  icon: null,
+  icon: "",
   status: "active",
-  is_private: false,
-  created_by: 1,
-  owner_id: 1,
+  visibility: "open",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
+  created_by_username: "admin",
+  owners: [],
+  is_owner: true,
+  member_count: 1,
+  group_permission_count: 0,
+  direct_user_permission_count: 0,
+  is_favorite: false,
   my_role: "admin",
   my_permissions: ["view", "edit", "delete", "admin"],
 };

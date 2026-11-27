@@ -1495,8 +1495,8 @@ export const TableCellDragSelection = Extension.create({
                 }
               };
 
-              const stop = (upEvent?: MouseEvent) => {
-                if (selectingCells && upEvent) {
+              const stop = (upEvent?: Event) => {
+                if (selectingCells && upEvent instanceof MouseEvent) {
                   upEvent.preventDefault();
                 }
                 disposeDrag();
