@@ -320,6 +320,18 @@ export function WritingAssistant({
   const [target, setTarget] = useState<Target | null>(null);
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [formatMenuOpen, setFormatMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const onFormatMenu = (event: Event) => {
+      setFormatMenuOpen(
+        Boolean((event as CustomEvent<{ open?: boolean }>).detail?.open),
+      );
+    };
+    window.addEventListener("wikihub:selection-format-menu", onFormatMenu);
+    return () =>
+      window.removeEventListener("wikihub:selection-format-menu", onFormatMenu);
+  }, []);
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -770,6 +782,9 @@ export function WritingAssistant({
   };
 
   if (!target || typeof document === "undefined") return null;
+  // Hide the floating AI trigger button while the right-click text formatting
+  // menu is open so it does not paint on top of the formatting controls.
+  if (!open && formatMenuOpen) return null;
   // A selection with the assistant off shows nothing; only the shortcut explains.
   if (enabled !== true && !open) return null;
 
@@ -804,7 +819,7 @@ export function WritingAssistant({
         data-testid="writing-assistant-minimized"
         onMouseDown={(event) => event.preventDefault()}
         style={{ left: pillLeft, top: pillTop }}
-        className="border-primary/35 bg-primary-subtle dark:bg-surface-raised fixed z-50 flex items-center gap-1.5 rounded-full border py-1 pr-1.5 pl-3 shadow-md"
+        className="border-border bg-surface-raised text-foreground fixed z-50 flex items-center gap-1.5 rounded-lg border py-1 pr-1.5 pl-2.5 shadow-lg"
       >
         <button
           type="button"
@@ -899,7 +914,7 @@ export function WritingAssistant({
               }),
         }}
         className={cn(
-          "border-border bg-surface fixed z-50 max-w-[calc(100vw-1rem)] rounded-xl border shadow-lg transition-shadow duration-150",
+          "border-border bg-surface-raised text-foreground fixed z-50 max-w-[calc(100vw-1rem)] rounded-lg border shadow-lg transition-shadow duration-150",
           dragging && "border-primary ring-primary/25 ring-2",
         )}
       >
@@ -968,7 +983,7 @@ export function WritingAssistant({
               </div>
             ) : null}
             <form
-              className="flex items-center gap-2 p-2.5"
+              className="flex items-center gap-1.5 px-2.5 py-2"
               onSubmit={(event) => {
                 event.preventDefault();
                 // This card renders inside the page's edit form (React events cross
@@ -977,7 +992,7 @@ export function WritingAssistant({
                 submitPrompt();
               }}
             >
-              <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full">
+              <span className="text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
                 <Sparkles className="size-4" aria-hidden />
               </span>
               <input
@@ -998,7 +1013,7 @@ export function WritingAssistant({
                     ? t("ai.writing.promptEdit")
                     : t("ai.writing.promptWrite")
                 }
-                className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
+                className="text-foreground placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
               <input
                 ref={fileInputRef}
@@ -1020,16 +1035,16 @@ export function WritingAssistant({
                 onClick={() => fileInputRef.current?.click()}
                 aria-label={t("ai.writing.attachFile")}
                 title={t("ai.writing.attachFile")}
-                className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                className="text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
               >
-                <Paperclip className="size-3.5" aria-hidden />
+                <Paperclip className="size-4" aria-hidden />
               </button>
               <button
                 type="submit"
                 disabled={pending || readingFiles || !prompt.trim()}
                 aria-label={t("ai.writing.send")}
                 title={t("ai.writing.send")}
-                className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
               >
                 {pending ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -1045,7 +1060,7 @@ export function WritingAssistant({
                 {t("ai.writing.working")}
               </p>
             ) : (
-              <div className="border-border grid gap-0.5 border-t p-1.5">
+              <div className="border-border grid gap-0.5 border-t p-1">
                 {QUICK.map(({ id, icon: Icon, labelKey, hintKey }) => {
                   const usable = id === "complete" ? canContinue : hasSelection;
                   if (!usable) return null;
@@ -1054,10 +1069,10 @@ export function WritingAssistant({
                       key={id}
                       type="button"
                       onClick={() => void ask(id, target)}
-                      className="hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                      className="group text-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                     >
                       <Icon
-                        className="text-primary size-4 shrink-0"
+                        className="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors duration-150"
                         aria-hidden
                       />
                       <span className="min-w-0">
@@ -1202,14 +1217,14 @@ export function WritingAssistant({
                     maxLength={1000}
                     aria-label={t("ai.writing.refineLabel")}
                     placeholder={t("ai.writing.refinePlaceholder")}
-                    className="placeholder:text-muted-foreground border-border bg-surface focus-visible:ring-ring min-w-0 flex-1 rounded-md border px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2"
+                    className="placeholder:text-muted-foreground border-border hover:border-border-strong bg-surface focus-visible:ring-ring min-w-0 flex-1 rounded-md border px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2"
                   />
                   <button
                     type="submit"
                     disabled={pending || !refineText.trim()}
                     aria-label={t("ai.writing.send")}
                     title={t("ai.writing.send")}
-                    className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                    className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
                   >
                     {pending ? (
                       <Loader2 className="size-3.5 animate-spin" aria-hidden />

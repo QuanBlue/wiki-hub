@@ -35,7 +35,7 @@ ALLOWED_TAGS: frozenset[str] = frozenset(
         "p", "br", "hr", "blockquote", "pre", "div", "nav",
         "h1", "h2", "h3", "h4", "h5", "h6",
         # inline marks
-        "strong", "b", "em", "i", "u", "s", "del", "code", "span", "sub", "sup", "mark",
+        "strong", "b", "em", "i", "u", "s", "del", "code", "span", "sub", "sup", "mark", "time",
         # lists - `input` only for the task-list checkbox shape
         "ul", "ol", "li", "input",
         # links and images
@@ -53,12 +53,20 @@ CLEAN_CONTENT_TAGS: frozenset[str] = frozenset({"script", "style", "title", "tex
 #: itself, and listing it here would disable that.
 ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
     "a": {"href", "title", "download", "data-attachment", "data-display-mode",
-          "data-attachment-href", "data-filename", "class"},
+          "data-attachment-href", "data-filename", "data-page-link", "class"},
     "img": {"src", "alt", "title", "width", "height", "data-caption", "data-alignment"},
     "pre": {"class", "data-type", "data-engine", "data-look", "data-caption", "data-code"},
     "code": {"class"},
-    "span": {"class", "data-type", "data-wikihub-text-style", "style"},
-    "div": {"class", "data-type", "data-callout-type", "data-open", "data-engine", "data-look", "data-caption", "data-code", "data-width", "data-alignment"},
+    "time": {"datetime", "data-type", "class"},
+    "span": {
+        "class", "data-type", "data-wikihub-text-style", "style",
+        "data-username", "data-label", "data-color", "data-latex",
+    },
+    "div": {
+        "class", "data-type", "data-callout-type", "data-open", "data-engine", "data-look",
+        "data-caption", "data-code", "data-width", "data-alignment",
+        "data-view-mode", "data-depth", "data-filter-status", "data-latex", "data-scene", "data-svg",
+    },
     "nav": {"data-type"},
     "ul": {"class", "data-type"},
     "ol": {"class", "start", "type"},

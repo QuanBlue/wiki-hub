@@ -19,6 +19,7 @@ import {
   Code2,
   FilePlus2,
   FileText,
+  FolderTree,
   Heading1,
   Heading2,
   Heading3,
@@ -34,8 +35,11 @@ import {
   Minus,
   Network,
   Paperclip,
+  PenTool,
   Pilcrow,
+  Sigma,
   Sparkles,
+  Tag,
   Quote,
   Table2,
   type LucideIcon,
@@ -635,6 +639,92 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     groupKey: "slash.groupLinks",
     preview: "linkToPage",
     run: () => requestPageAction("link-to-page"),
+  },
+  {
+    id: "child-pages",
+    labelKey: "slash.childPagesLabel",
+    descriptionKey: "slash.childPagesDescription",
+    keywords: ["child", "subpages", "report", "properties", "index", "trangcon"],
+    icon: FolderTree,
+    groupKey: "slash.groupLayout",
+    preview: "table",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "childPages",
+          attrs: { viewMode: "table", depth: "direct", filterStatus: "" },
+        })
+        .run(),
+  },
+  {
+    id: "status-badge",
+    labelKey: "slash.statusBadgeLabel",
+    descriptionKey: "slash.statusBadgeDescription",
+    keywords: ["status", "badge", "lozenge", "pill", "tag", "trangthai"],
+    icon: Tag,
+    groupKey: "slash.groupLayout",
+    preview: "text",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent([
+          { type: "statusBadge", attrs: { label: "IN PROGRESS", color: "blue" } },
+          { type: "text", text: " " },
+        ])
+        .run(),
+  },
+  {
+    id: "math-block",
+    labelKey: "slash.mathBlockLabel",
+    descriptionKey: "slash.mathBlockDescription",
+    keywords: ["math", "katex", "latex", "equation", "formula", "toan"],
+    icon: Sigma,
+    groupKey: "slash.groupMedia",
+    shortcut: "$$",
+    preview: "codeBlock",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: "blockMath", attrs: { latex: "" } })
+        .run(),
+  },
+  {
+    id: "math-inline",
+    labelKey: "slash.mathInlineLabel",
+    descriptionKey: "slash.mathInlineDescription",
+    keywords: ["math", "inline", "latex", "formula", "toan"],
+    icon: Sigma,
+    groupKey: "slash.groupMedia",
+    shortcut: "$...$",
+    preview: "text",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent([
+          { type: "inlineMath", attrs: { latex: "" } },
+          { type: "text", text: " " },
+        ])
+        .run(),
+  },
+  {
+    id: "whiteboard",
+    labelKey: "slash.whiteboardLabel",
+    descriptionKey: "slash.whiteboardDescription",
+    keywords: ["whiteboard", "draw", "canvas", "sketch", "bangve", "vetay"],
+    icon: PenTool,
+    groupKey: "slash.groupMedia",
+    preview: "diagram",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: "whiteboard" })
+        .run(),
   },
   {
     id: "create-subpage",

@@ -900,6 +900,29 @@ export const sectionsVi: HelpSection[] = [
           hồi, cuộn bình luận vào giữa màn hình và làm nổi bật nó trong giây lát. Cách này vẫn hoạt
           động khi bạn đang ở sẵn trang đó. Bình luận được đưa vào sao lưu và khôi phục.
         </p>
+
+        <h4 className="mt-4 text-sm font-semibold">
+          Thuộc tính trang, tổng hợp trang con &amp; khối Editor nâng cao
+        </h4>
+        <ul className="mt-1.5 list-disc space-y-1.5 pl-5 text-sm">
+          <li>
+            <strong>Thuộc tính trang (Page Properties)</strong>: Người có quyền sửa có thể bấm vào
+            nhãn trạng thái hoặc biểu tượng thông tin cạnh tiêu đề để gắn{" "}
+            <strong>Trạng thái</strong> (Nháp, Đang cập nhật, Chính thức, Lỗi thời, Lưu trữ),{" "}
+            <strong>Người phụ trách</strong> và các trường tùy chỉnh.
+          </li>
+          <li>
+            <strong>Khối tổng hợp trang con (<code>/child-pages</code>)</strong>: Chèn bảng tổng hợp
+            thuộc tính hoặc cây danh sách các trang con tự động, hỗ trợ lọc trạng thái và sắp xếp.
+          </li>
+          <li>
+            <strong>Phím tắt &amp; khối nâng cao</strong>: Gõ <code>@</code> trong trình soạn thảo
+            để nhắc tên đồng đội (tự gửi thông báo khi lưu) hoặc chèn ngày (<code>@today</code>);
+            gõ <code>[[</code> để tìm và chèn nhanh link trang; dùng <code>/status</code> cho nhãn
+            trạng thái nhiều màu, <code>/math</code> hoặc <code>$...$</code> cho công thức KaTeX,
+            và <code>/whiteboard</code> cho bảng vẽ vector SVG tích hợp sẵn.
+          </li>
+        </ul>
       </>
     ),
   },

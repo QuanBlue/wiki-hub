@@ -35,6 +35,9 @@ from app.schemas.page import (
     PageCreate,
     PageLikeRead,
     PageMove,
+    PageProperties,
+    PagePropertiesOwner,
+    PagePropertiesRead,
     PageRead,
     PageRecentItem,
     PageRestoreResult,
@@ -91,7 +94,94 @@ class PageService:
         if not await self.spaces.permissions.can_view_page(page, user):
             raise PermissionDeniedError("You do not have access to this page.")
 
-    def to_read(self, page: WikiPage) -> PageRead:
+    @staticmethod
+    def _parse_properties(raw: dict | None) -> PagePropertiesRead:
+        if not raw or not isinstance(raw, dict):
+            return PagePropertiesRead()
+        try:
+            return PagePropertiesRead.model_validate(raw)
+        except Exception:
+            return PagePropertiesRead()
+
+    @staticmethod
+    def _dump_properties(props: PageProperties | None) -> dict:
+        if props is None:
+            return {}
+        data = props.model_dump(mode="json")
+        # Keep stored JSON compact: drop empty defaults so empty properties == {}
+        cleaned: dict = {}
+        if data.get("status"):
+            cleaned["status"] = data["status"]
+        if data.get("owner_id"):
+            cleaned["owner_id"] = data["owner_id"]
+        if data.get("custom"):
+            cleaned["custom"] = data["custom"]
+        return cleaned
+
+    @staticmethod
+    def _extract_page_mentions(content: str, content_format: str) -> set[str]:
+        """Extract usernames from inline `<span data-type="userMention" data-username="...">`."""
+        if not content or content_format != "html" or "userMention" not in content:
+            return set()
+        soup = BeautifulSoup(content, "html.parser")
+        names: set[str] = set()
+        for el in soup.select('span[data-type="userMention"][data-username]'):
+            username = str(el.get("data-username") or "").strip().lower()
+            if username:
+                names.add(username)
+        return names
+
+    async def _notify_page_mentions(
+        self,
+        space: Space,
+        page: WikiPage,
+        actor: User,
+        previous_content: str,
+        previous_format: str,
+    ) -> None:
+        after = self._extract_page_mentions(page.content, page.content_format)
+        if not after:
+            return
+        before = self._extract_page_mentions(previous_content, previous_format)
+        newly_mentioned = sorted(after - before)
+        if not newly_mentioned:
+            return
+        users = list(
+            await self.session.scalars(
+                select(User).where(
+                    func.lower(User.username).in_(newly_mentioned),
+                    User.is_active.is_(True),
+                )
+            )
+        )
+        link = f"/spaces/{space.key}/pages/{page.slug}"
+        params = {"title": page.title, "space": space.name or space.key}
+        for recipient in users:
+            if recipient.id == actor.id:
+                continue
+            if await self.spaces.permissions.can_view_page(page, recipient):
+                await notify(
+                    self.session,
+                    recipient.id,
+                    kind="page_mention",
+                    params=params,
+                    link=link,
+                    actor=actor,
+                )
+
+    def to_read(
+        self, page: WikiPage, owner_map: dict[uuid.UUID, User] | None = None
+    ) -> PageRead:
+        props = self._parse_properties(getattr(page, "properties", None))
+        if props.owner_id is not None and owner_map is not None:
+            owner_user = owner_map.get(props.owner_id)
+            if owner_user is not None:
+                props.owner = PagePropertiesOwner(
+                    id=owner_user.id,
+                    username=owner_user.username,
+                    full_name=owner_user.full_name,
+                    avatar_url=owner_user.avatar_url,
+                )
         return PageRead(
             id=page.id,
             space_id=page.space_id,
@@ -106,10 +196,21 @@ class PageService:
             or (page.created_by.username if page.created_by else None),
             updated_by_username=_display_actor_label(page.updated_by_label)
             or (page.updated_by.username if page.updated_by else None),
+            properties=props,
         )
 
-    async def to_read_for_user(self, page: WikiPage, user: User) -> PageRead:
-        result = self.to_read(page)
+    async def to_read_for_user(
+        self,
+        page: WikiPage,
+        user: User,
+        owner_map: dict[uuid.UUID, User] | None = None,
+    ) -> PageRead:
+        if owner_map is None:
+            props_raw = self._parse_properties(getattr(page, "properties", None))
+            if props_raw.owner_id is not None:
+                owner_user = await self.session.get(User, props_raw.owner_id)
+                owner_map = {owner_user.id: owner_user} if owner_user is not None else {}
+        result = self.to_read(page, owner_map=owner_map)
         result.can_edit = await self.spaces.permissions.can_edit_page(page, user)
         space = await self.session.get(Space, page.space_id)
         space_permissions = (
@@ -265,16 +366,28 @@ class PageService:
     def to_read_many(self, pages: Sequence[WikiPage]) -> list[PageRead]:
         return [self.to_read(page) for page in pages]
 
+    async def _load_owner_map(self, pages: Sequence[WikiPage]) -> dict[uuid.UUID, User]:
+        owner_ids: set[uuid.UUID] = set()
+        for page in pages:
+            props = self._parse_properties(getattr(page, "properties", None))
+            if props.owner_id is not None:
+                owner_ids.add(props.owner_id)
+        if not owner_ids:
+            return {}
+        users = list(await self.session.scalars(select(User).where(User.id.in_(owner_ids))))
+        return {u.id: u for u in users}
+
     async def list_for_space(
         self, space: Space, user: User | None = None, *, limit: int = 10000, offset: int = 0
     ) -> list[PageRead]:
         pages = await self.pages.list_for_space(space.id, limit=limit, offset=offset)
+        owner_map = await self._load_owner_map(pages)
         if user is None:
-            return self.to_read_many(pages)
+            return [self.to_read(page, owner_map=owner_map) for page in pages]
         visible = [
             page for page in pages if await self.spaces.permissions.can_view_page(page, user)
         ]
-        return [await self.to_read_for_user(page, user) for page in visible]
+        return [await self.to_read_for_user(page, user, owner_map=owner_map) for page in visible]
 
     async def get_by_slug(self, space: Space, slug: str) -> WikiPage:
         page = await self.pages.get_by_slug(space.id, slug)
@@ -360,6 +473,7 @@ class PageService:
             slug=slug,
             content=content,
             content_format=content_format,
+            properties=self._dump_properties(payload.properties),
             created_by_id=creator.id,
             updated_by_id=creator.id,
         )
@@ -368,6 +482,7 @@ class PageService:
         await self.session.refresh(page)
         await self.snapshot_revision(page, creator, "Initial page creation")
         await self._notify_watchers(space, page, creator, is_create=True)
+        await self._notify_page_mentions(space, page, creator, "", "html")
         logger.info("page_created", space_key=space.key, slug=page.slug, by=creator.username)
         return page
 
@@ -392,6 +507,8 @@ class PageService:
                             ),
                         },
                     )
+        previous_content = page.content
+        previous_format = page.content_format
         data = payload.model_dump(exclude_unset=True)
         if data.get("title") is not None:
             page.title = str(data["title"]).strip()
@@ -399,6 +516,8 @@ class PageService:
             page.content = str(data["content"]).strip()
         if data.get("content_format") is not None:
             page.content_format = str(data["content_format"])
+        if "properties" in data and payload.properties is not None:
+            page.properties = self._dump_properties(payload.properties)
         page.updated_by_id = user.id
         await self.session.flush()
         await self.session.refresh(page)
@@ -408,10 +527,29 @@ class PageService:
         if draft is not None:
             await self.drafts.delete(draft)
         await self._notify_watchers(space, page, user, is_create=False)
+        await self._notify_page_mentions(space, page, user, previous_content, previous_format)
         await PresenceService.broadcast_page_saved(
             page.id, user, page.updated_at, page.title
         )
         logger.info("page_updated", space_key=space.key, slug=page.slug, by=user.username)
+        return page
+
+    async def update_properties(
+        self, space: Space, page: WikiPage, payload: PageProperties, user: User
+    ) -> WikiPage:
+        """Update shared page metadata without creating a full content revision."""
+        await self.require_page_editor(page, user)
+        if payload.owner_id is not None:
+            owner = await self.session.get(User, payload.owner_id)
+            if owner is None or not owner.is_active:
+                raise BadRequestError("Selected owner does not exist or is inactive.")
+        page.properties = self._dump_properties(payload)
+        page.updated_by_id = user.id
+        await self.session.flush()
+        await self.session.refresh(page)
+        logger.info(
+            "page_properties_updated", space_key=space.key, slug=page.slug, by=user.username
+        )
         return page
 
     async def get_draft(self, page: WikiPage, user: User) -> PageDraftRead | None:

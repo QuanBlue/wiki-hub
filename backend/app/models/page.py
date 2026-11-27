@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -45,6 +47,10 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     content_format: Mapped[str] = mapped_column(
         String(16), nullable=False, default="html", server_default="html"
+    )
+    #: Lightweight shared metadata (status, owner_id, version, custom fields).
+    properties: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
 
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(

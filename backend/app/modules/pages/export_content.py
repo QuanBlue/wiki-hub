@@ -40,12 +40,14 @@ from typing import Final
 
 from bs4 import BeautifulSoup, Tag
 from markdown_it import MarkdownIt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
+from app.models.user import User
 from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
@@ -415,6 +417,157 @@ def _render_diagrams_for_export(
             el.replace_with(pre_tag)
 
 
+async def _render_child_pages_for_export(
+    soup: BeautifulSoup, *, page: WikiPage, session: AsyncSession
+) -> None:
+    """Expand live `<div data-type="childPages">` blocks into static tables or lists."""
+    blocks = soup.select('div[data-type="childPages"]')
+    if not blocks:
+        return
+    all_pages = list(
+        await session.scalars(
+            select(WikiPage)
+            .where(WikiPage.space_id == page.space_id, WikiPage.deleted_at.is_(None))
+            .order_by(WikiPage.title)
+        )
+    )
+    children_by_parent: dict[uuid.UUID | None, list[WikiPage]] = {}
+    for item in all_pages:
+        children_by_parent.setdefault(item.parent_id, []).append(item)
+
+    def collect_descendants(parent_id: uuid.UUID, depth_mode: str) -> list[tuple[WikiPage, int]]:
+        result: list[tuple[WikiPage, int]] = []
+        stack: list[tuple[WikiPage, int]] = [
+            (child, 0) for child in reversed(children_by_parent.get(parent_id, []))
+        ]
+        seen: set[uuid.UUID] = set()
+        while stack:
+            node, lvl = stack.pop()
+            if node.id in seen:
+                continue
+            seen.add(node.id)
+            result.append((node, lvl))
+            if depth_mode == "all":
+                for grand in reversed(children_by_parent.get(node.id, [])):
+                    stack.append((grand, lvl + 1))
+        return result
+
+    owner_ids: set[uuid.UUID] = set()
+    for p in all_pages:
+        raw_props = getattr(p, "properties", None)
+        if isinstance(raw_props, dict) and raw_props.get("owner_id"):
+            try:
+                owner_ids.add(uuid.UUID(str(raw_props["owner_id"])))
+            except ValueError:
+                pass
+    owner_map: dict[str, str] = {}
+    if owner_ids:
+        owners = list(await session.scalars(select(User).where(User.id.in_(owner_ids))))
+        for u in owners:
+            owner_map[str(u.id)] = u.full_name or u.username
+
+    status_labels = {
+        "draft": "Draft",
+        "in_progress": "In Progress",
+        "verified": "Verified",
+        "outdated": "Outdated",
+        "archived": "Archived",
+    }
+
+    for block in blocks:
+        view_mode = str(block.get("data-view-mode") or "table")
+        depth_mode = str(block.get("data-depth") or "direct")
+        filter_status = str(block.get("data-filter-status") or "").strip()
+        rows = collect_descendants(page.id, depth_mode)
+        if filter_status:
+            rows = [
+                (p, lvl)
+                for p, lvl in rows
+                if isinstance(getattr(p, "properties", None), dict)
+                and p.properties.get("status") == filter_status
+            ]
+        if not rows:
+            empty_p = soup.new_tag("p")
+            em = soup.new_tag("em")
+            em.string = "No child pages."
+            empty_p.append(em)
+            block.replace_with(empty_p)
+            continue
+
+        if view_mode == "tree":
+            ul = soup.new_tag("ul")
+            for p, lvl in rows:
+                li = soup.new_tag("li")
+                prefix = "— " * lvl if lvl > 0 else ""
+                props = p.properties if isinstance(getattr(p, "properties", None), dict) else {}
+                st = status_labels.get(str(props.get("status") or ""), "")
+                li.string = f"{prefix}{p.title}" + (f" [{st}]" if st else "")
+                ul.append(li)
+            block.replace_with(ul)
+        else:
+            table = soup.new_tag("table")
+            thead = soup.new_tag("thead")
+            tr_head = soup.new_tag("tr")
+            for heading in ("Page", "Status", "Owner", "Updated"):
+                th = soup.new_tag("th")
+                th.string = heading
+                tr_head.append(th)
+            thead.append(tr_head)
+            table.append(thead)
+            tbody = soup.new_tag("tbody")
+            for p, lvl in rows:
+                props = p.properties if isinstance(getattr(p, "properties", None), dict) else {}
+                tr = soup.new_tag("tr")
+                td_title = soup.new_tag("td")
+                td_title.string = ("  " * lvl) + p.title
+                td_status = soup.new_tag("td")
+                td_status.string = status_labels.get(str(props.get("status") or ""), "—")
+                td_owner = soup.new_tag("td")
+                td_owner.string = owner_map.get(str(props.get("owner_id") or ""), "—")
+                td_upd = soup.new_tag("td")
+                td_upd.string = p.updated_at.strftime("%Y-%m-%d") if p.updated_at else "—"
+                for td in (td_title, td_status, td_owner, td_upd):
+                    tr.append(td)
+                tbody.append(tr)
+            table.append(tbody)
+            block.replace_with(table)
+
+
+def _render_custom_inline_and_blocks_for_export(soup: BeautifulSoup) -> None:
+    """Ensure status badges, math blocks, and whiteboards export cleanly."""
+    for badge in soup.select('span[data-type="statusBadge"]'):
+        label = str(badge.get("data-label") or badge.get_text() or "STATUS").strip()
+        badge.string = f"[{label}]"
+
+    for math_el in soup.select('span[data-type="inlineMath"], div[data-type="blockMath"]'):
+        latex = str(math_el.get("data-latex") or math_el.get_text() or "").strip()
+        if math_el.name == "div":
+            pre = soup.new_tag("pre")
+            code = soup.new_tag("code")
+            code.string = latex
+            pre.append(code)
+            math_el.replace_with(pre)
+        else:
+            code = soup.new_tag("code")
+            code.string = latex
+            math_el.replace_with(code)
+
+    for wb in soup.select('div[data-type="whiteboard"]'):
+        svg_b64 = str(wb.get("data-svg") or "").strip()
+        caption = str(wb.get("data-caption") or "").strip()
+        if svg_b64.startswith("data:image/svg+xml;base64,"):
+            img = soup.new_tag("img", src=svg_b64, alt=caption or "Whiteboard")
+            p = soup.new_tag("p")
+            p.append(img)
+            wb.replace_with(p)
+        else:
+            p = soup.new_tag("p")
+            em = soup.new_tag("em")
+            em.string = f"[Whiteboard{f': {caption}' if caption else ''}]"
+            p.append(em)
+            wb.replace_with(p)
+
+
 async def prepare_export_html(
     page: WikiPage,
     *,
@@ -434,6 +587,8 @@ async def prepare_export_html(
     soup = BeautifulSoup(_render_content(page), "html.parser")
     _sanitize(soup)
     _force_toggles_open(soup)
+    await _render_child_pages_for_export(soup, page=page, session=session)
+    _render_custom_inline_and_blocks_for_export(soup)
     _wrap_bare_header_rows(soup)
     if native_word_toc:
         _mark_table_of_contents_for_word(soup)

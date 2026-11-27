@@ -32,11 +32,33 @@ export function ignoreNodeViewChrome({ mutation }: { mutation: ViewMutationRecor
   return !(view && content && view.contains(content));
 }
 /**
- * Node types whose node view starts a drag through the custom move machinery.
- * Both hide `dragstart` from ProseMirror behind a node view, so both need the
- * drop to be owned rather than left to ProseMirror's external-drop path.
+ * Block node types that expose the floating drag handle in edit mode so users
+ * can reorder or nest them (e.g. into bullet lists, blockquotes, callouts,
+ * toggles, or table cells).
  */
-export const DRAGGABLE_NODE_TYPES = new Set(["image", "attachment"]);
+export const DRAGGABLE_BLOCK_NODE_TYPES = new Set([
+  "table",
+  "codeBlock",
+  "blockquote",
+  "callout",
+  "toggle",
+  "diagram",
+  "whiteboard",
+  "blockMath",
+  "tableOfContents",
+  "childPages",
+  "horizontalRule",
+]);
+
+/**
+ * Node types whose drag is owned by the editor's internal move machinery
+ * rather than left to ProseMirror's external-drop path.
+ */
+export const DRAGGABLE_NODE_TYPES = new Set([
+  "image",
+  "attachment",
+  ...DRAGGABLE_BLOCK_NODE_TYPES,
+]);
 export const headingLevels = [1, 2, 3, 4] as const;
 function escapeHtml(value: string): string {
   return value

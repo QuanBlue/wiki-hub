@@ -18,6 +18,12 @@ import type { WikiPage } from "@/types/api";
 import { AttachmentDetailsModal } from "./editor/attachment-details-modal";
 import { attachmentIdFromLink, isAttachmentHref } from "./editor/attachment-node";
 import {
+  BlockDragHandle,
+  moveBlockNode,
+  resolveBlockDropTarget,
+} from "./editor/block-drag-handle";
+import {
+  DRAGGABLE_BLOCK_NODE_TYPES,
   DRAGGABLE_NODE_TYPES,
   editorClassName,
   ignoreNodeViewChrome,
@@ -31,6 +37,7 @@ import {
 } from "./editor/extensions";
 import {
   LinkFloatingToolbar,
+  SelectionFormatMenu,
   TableActionsMenu,
 } from "./editor/floating-menus";
 import {
@@ -161,6 +168,7 @@ export function RichTextEditor({
   }, []);
   const internalNodeDragRef = useRef(false);
   const draggedNodePosRef = useRef<number | null>(null);
+  const draggedIsBlockRef = useRef(false);
   const normalizedContent = useMemo(
     () => normalizeConfluenceCodeMacros(content),
     [content],
@@ -217,13 +225,30 @@ export function RichTextEditor({
         // instead and move the node ourselves.
         if (!internalNodeDragRef.current) return false;
         const fromPos = draggedNodePosRef.current;
+        const isBlockDrag = draggedIsBlockRef.current;
         internalNodeDragRef.current = false;
         draggedNodePosRef.current = null;
+        draggedIsBlockRef.current = false;
         // Every path below returns true, which makes ProseMirror call
         // preventDefault: a drop we cannot place must be a no-op, never a copy.
         if (typeof fromPos !== "number") return true;
         const node = view.state.doc.nodeAt(fromPos);
         if (!node || !DRAGGABLE_NODE_TYPES.has(node.type.name)) return true;
+
+        if (isBlockDrag || DRAGGABLE_BLOCK_NODE_TYPES.has(node.type.name)) {
+          const target = resolveBlockDropTarget(
+            view,
+            event.clientX,
+            event.clientY,
+            node,
+            fromPos,
+          );
+          if (target) {
+            moveBlockNode(view, fromPos, target.pos);
+          }
+          return true;
+        }
+
         const dropCoords = view.posAtCoords({
           left: event.clientX,
           top: event.clientY,
@@ -335,15 +360,20 @@ export function RichTextEditor({
     };
     const onInternalNodeDragStart = (event: Event) => {
       internalNodeDragRef.current = true;
-      const customEvt = event as CustomEvent<{ pos?: number }>;
+      const customEvt = event as CustomEvent<{
+        pos?: number;
+        isBlock?: boolean;
+      }>;
       if (typeof customEvt.detail?.pos === "number") {
         draggedNodePosRef.current = customEvt.detail.pos;
       }
+      draggedIsBlockRef.current = Boolean(customEvt.detail?.isBlock);
       setDraggingFiles(false);
     };
     const onInternalNodeDragEnd = () => {
       internalNodeDragRef.current = false;
       draggedNodePosRef.current = null;
+      draggedIsBlockRef.current = false;
       setDraggingFiles(false);
     };
     // Bubble phase, so it settles the refs only after ProseMirror's drop
@@ -353,6 +383,7 @@ export function RichTextEditor({
     const onDropCleanup = () => {
       internalNodeDragRef.current = false;
       draggedNodePosRef.current = null;
+      draggedIsBlockRef.current = false;
       setDraggingFiles(false);
     };
 
@@ -426,7 +457,9 @@ export function RichTextEditor({
             "[&_h1]:whitespace-nowrap [&_h2]:whitespace-nowrap [&_h3]:whitespace-nowrap [&_h4]:whitespace-nowrap [&_p]:whitespace-nowrap",
         )}
       />
+      <BlockDragHandle editor={editor} containerRef={editorContainerRef} />
       <TableActionsMenu editor={editor} />
+      <SelectionFormatMenu editor={editor} />
       {editor && pageLinkContext ? (
         <WritingAssistant editor={editor} spaceKey={pageLinkContext.spaceKey} />
       ) : null}

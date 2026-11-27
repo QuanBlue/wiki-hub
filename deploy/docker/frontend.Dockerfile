@@ -6,7 +6,8 @@
 FROM node:20-trixie-slim AS deps
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci \
+    && sha256sum package-lock.json | awk '{print $1}' > /app/node_modules/.wikihub-package-lock
 
 # --- build ------------------------------------------------------------------
 FROM node:20-trixie-slim AS builder

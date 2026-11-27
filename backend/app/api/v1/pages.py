@@ -37,6 +37,7 @@ from app.schemas.page import (
     PageCreate,
     PageLikeRead,
     PageMove,
+    PageProperties,
     PageRead,
     PageRecentItem,
     PageRestoreResult,
@@ -393,6 +394,25 @@ async def update_page(
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     updated = await page_service.update(space, page, payload, user)
+    return await page_service.to_read_for_user(updated, user)
+
+
+@router.patch(
+    "/{slug}/properties",
+    response_model=PageRead,
+    summary="Update a page's shared properties (status, owner, version, custom fields)",
+)
+async def update_page_properties(
+    key: str,
+    slug: str,
+    payload: PageProperties,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    updated = await page_service.update_properties(space, page, payload, user)
     return await page_service.to_read_for_user(updated, user)
 
 
