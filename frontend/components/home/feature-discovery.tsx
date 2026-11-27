@@ -47,21 +47,13 @@ const SLIDE_DURATION_MS = 10000;
 const IMAGE_DIR = "/feature-discovery";
 const HELP_IMAGE_DIR = "/help";
 
-type PreviewKind =
-  | "ai-chat"
-  | "page-templates"
-  | "two-factor-auth"
-  | "profile-personalization";
-
 interface FeatureSlide {
   id: string;
   /** Real capture of the app in `public/feature-discovery/<id>.png` or `public/help/<name>.png`. */
-  image?: string;
+  image: string;
   imageAlt: string;
   /** Pixel size of the capture, so the layout does not jump while it loads. */
-  imageSize?: [number, number];
-  /** Lightweight themed UI preview when a static capture is not bundled yet. */
-  previewKind?: PreviewKind;
+  imageSize: [number, number];
   icon: React.ReactNode;
   iconColor: string;
   cardBg: string;
@@ -188,153 +180,6 @@ const PURPOSE: Record<string, [string, string]> = {
 
 /** Number of guides; the circular carousel needs it before the slides exist. */
 const SLIDE_COUNT = Object.keys(PURPOSE).length;
-
-function FeaturePreview({
-  kind,
-  isVi,
-  compact = false,
-}: {
-  kind: PreviewKind;
-  isVi: boolean;
-  compact?: boolean;
-}) {
-  const pad = compact ? "p-2 text-[9px]" : "p-5 text-xs";
-  if (kind === "ai-chat") {
-    return (
-      <div className={cn("bg-surface text-foreground flex size-full flex-col justify-between", pad)}>
-        <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <Sparkles className="text-primary size-3 shrink-0" aria-hidden />
-            {isVi ? "Trò chuyện với AI" : "Chat with AI"}
-          </span>
-          <span className="bg-primary-subtle text-primary rounded px-1.5 py-0.5 font-mono text-[8px]">
-            {isVi ? "Đa luồng · Mã hóa" : "Threads · Encrypted"}
-          </span>
-        </div>
-        <div className={cn("my-1.5 space-y-1.5", compact && "space-y-1")}>
-          <div className="bg-surface-sunken border-border ml-auto max-w-[82%] rounded-lg border px-2 py-1 text-right">
-            {isVi ? "Quy trình phát hành hàng tuần là gì?" : "What is our weekly release process?"}
-          </div>
-          <div className="bg-primary-subtle/60 border-primary/20 max-w-[90%] rounded-lg border px-2 py-1">
-            <span className="font-medium">
-              {isVi ? "Phát hành mỗi thứ Tư sau khi qua checklist " : "Releases ship every Wednesday after the checklist "}
-            </span>
-            <span className="bg-primary text-primary-foreground rounded px-1 font-mono text-[8px]">1</span>
-          </div>
-        </div>
-        {!compact && (
-          <div className="border-border bg-surface-sunken text-muted-foreground flex items-center justify-between rounded-md border px-2.5 py-1.5 text-[11px]">
-            <span>{isVi ? "Hỏi nối tiếp hoặc đính kèm tệp..." : "Ask a follow-up or attach a file..."}</span>
-            <span className="bg-primary text-primary-foreground rounded px-1.5 py-0.5 text-[10px] font-medium">
-              Enter
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  }
-  if (kind === "page-templates") {
-    const items = isVi
-      ? ["Biên bản họp", "Runbook vận hành", "ADR kiến trúc", "Hậu kiểm sự cố"]
-      : ["Meeting Notes", "Operations Runbook", "Architecture ADR", "Incident Post-mortem"];
-    return (
-      <div className={cn("bg-surface text-foreground flex size-full flex-col justify-between", pad)}>
-        <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <LayoutTemplate className="text-primary size-3 shrink-0" aria-hidden />
-            {isVi ? "Chọn mẫu trang" : "Choose a template"}
-          </span>
-          <span className="bg-surface-sunken text-muted-foreground rounded px-1.5 py-0.5 text-[8px]">
-            {isVi ? "Space · Toàn cục · 18 mẫu sẵn" : "Space · Global · 18 Built-in"}
-          </span>
-        </div>
-        <div className={cn("mt-1.5 grid grid-cols-2 gap-1.5", !compact && "gap-2.5")}>
-          {items.map((name, idx) => (
-            <div
-              key={name}
-              className={cn(
-                "rounded-md border px-2 py-1.5",
-                idx === 0
-                  ? "border-primary bg-primary-subtle/50"
-                  : "border-border bg-surface-sunken/60",
-              )}
-            >
-              <div className="truncate font-medium">{name}</div>
-              {!compact && (
-                <div className="bg-border/70 mt-1.5 h-1.5 w-3/4 rounded-full" />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (kind === "two-factor-auth") {
-    return (
-      <div className={cn("bg-surface text-foreground flex size-full flex-col justify-between", pad)}>
-        <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <ShieldCheck className="text-success size-3.5 shrink-0" aria-hidden />
-            {isVi ? "Xác thực hai lớp (2FA)" : "Two-Factor Authentication"}
-          </span>
-          <span className="bg-success-bg text-success rounded px-1.5 py-0.5 font-mono text-[8px] font-medium">
-            TOTP
-          </span>
-        </div>
-        <div className="my-1.5 flex items-center justify-center gap-1.5">
-          {["4", "8", "2", "9", "1", "6"].map((digit, i) => (
-            <span
-              key={i}
-              className={cn(
-                "border-border bg-surface-sunken flex items-center justify-center rounded-md border font-mono font-semibold",
-                compact ? "size-5 text-[10px]" : "size-9 text-base",
-              )}
-            >
-              {digit}
-            </span>
-          ))}
-        </div>
-        {!compact && (
-          <div className="border-border bg-surface-sunken text-muted-foreground flex items-center justify-between rounded-md border px-2.5 py-1.5 text-[11px]">
-            <span>{isVi ? "10 mã khôi phục dùng một lần (.txt)" : "10 one-time recovery codes (.txt)"}</span>
-            <span className="text-success font-medium">{isVi ? "QR tạo tại máy" : "Local QR"}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className={cn("bg-surface text-foreground flex size-full flex-col justify-between", pad)}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="bg-surface-sunken border-border inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium">
-          <span>💬</span>
-          {isVi ? "Đang viết tài liệu..." : "Writing docs..."}
-        </span>
-        <span className="bg-primary-subtle text-primary rounded px-1.5 py-0.5 font-mono text-[8px]">
-          {isVi ? "15 hiệu ứng" : "15 effects"}
-        </span>
-      </div>
-      <div className="my-1.5 flex items-center gap-2.5">
-        <span
-          className={cn(
-            "bg-primary text-primary-foreground flex shrink-0 items-center justify-center rounded-full font-semibold",
-            compact ? "size-7 text-[10px]" : "size-11 text-sm",
-          )}
-        >
-          WH
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold">
-            {isVi ? "Hồ sơ & Hiệu ứng chào mừng" : "Profile & Welcome Effects"}
-          </div>
-          <div className="text-muted-foreground truncate text-[10px]">
-            {isVi ? "Ảnh bìa · Trạng thái · Lịch lễ hội" : "Cover · Status · Holiday calendar"}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** Inline markup for guide text: `code`, **bold**, __underline__, *italic*. */
 function Rich({ text }: { text: string }) {
@@ -550,7 +395,7 @@ export function FeatureDiscovery() {
       {
         id: "office-editing",
         image: img("office-editing"),
-        imageSize: size(768, 480),
+        imageSize: size(768, 470),
         imageAlt: L(
           "An Excel workbook previewed in the page with Download and Edit buttons",
           "Bảng tính Excel được xem trước ngay trong trang, có nút Tải xuống và Chỉnh sửa",
@@ -933,10 +778,11 @@ export function FeatureDiscovery() {
       },
       {
         id: "ai-chat",
-        previewKind: "ai-chat",
+        image: img("ai-chat"),
+        imageSize: size(1000, 1055),
         imageAlt: L(
-          "The AI chat panel with threaded conversations, wiki citations and follow-up queue",
-          "Khung trò chuyện AI với nhiều luồng hội thoại, trích dẫn wiki và hàng đợi câu hỏi nối tiếp",
+          "The AI assistant drawer with chat threads sidebar, suggested questions, file attachment and response detail selector",
+          "Khung trợ lý AI với thanh luồng hội thoại, câu hỏi gợi ý, đính kèm tệp và mức độ chi tiết câu trả lời",
         ),
         icon: <MessageSquare className="size-3.5" />,
         iconColor: "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
@@ -970,8 +816,8 @@ export function FeatureDiscovery() {
       },
       {
         id: "ai-writing",
-        image: helpImg("ai-writing-result"),
-        imageSize: size(1482, 761),
+        image: img("ai-writing"),
+        imageSize: size(860, 761),
         imageAlt: L(
           "The in-editor AI writing assistant generating a structured checklist ready to insert",
           "Trợ lý viết AI trong trình soạn thảo tạo danh sách kiểm tra sẵn sàng chèn vào trang",
@@ -1051,7 +897,7 @@ export function FeatureDiscovery() {
         actionLink: "/spaces",
         actionLinkLabel: L("Browse spaces", "Khám phá các Space"),
         steps: [
-          L("Open a space and click **Create** to start a new page.", "Mở một space và bấm **Tạo trang**."),
+          L("Open a space and click **New** to start a new page.", "Mở một space và bấm **Mới** để tạo trang mới."),
           L("Switch to the **Write with AI** tab and describe the page you want.", "Chuyển sang thẻ **Viết cùng AI** và mô tả trang bạn muốn tạo."),
           L("Answer any quick questions, inspect the preview, then click **Create page**.", "Trả lời vài câu gợi ý, xem bản xem trước rồi bấm **Tạo trang**."),
         ],
@@ -1063,10 +909,11 @@ export function FeatureDiscovery() {
       },
       {
         id: "page-templates",
-        previewKind: "page-templates",
+        image: img("page-templates"),
+        imageSize: size(1200, 849),
         imageAlt: L(
-          "Template picker showing built-in, global and space templates such as Meeting Notes and Runbook",
-          "Bộ chọn mẫu trang hiển thị các mẫu sẵn có, toàn cục và của space như Biên bản họp và Runbook",
+          "Create page dialog showing Start from a template with Space, Global and Built-in filters and a live Meeting Notes preview",
+          "Hộp thoại Tạo trang với bộ chọn mẫu theo Space, Toàn cục, Có sẵn và bản xem trước trực tiếp mẫu Biên bản họp",
         ),
         icon: <LayoutTemplate className="size-3.5" />,
         iconColor: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
@@ -1082,7 +929,7 @@ export function FeatureDiscovery() {
         actionLink: "/spaces",
         actionLinkLabel: L("Browse spaces", "Khám phá các Space"),
         steps: [
-          L("Click **Create page** inside any space.", "Bấm **Tạo trang** trong bất kỳ space nào."),
+          L("Click **New** inside any space to open the **Create page** dialog.", "Bấm **Mới** trong bất kỳ space nào để mở hộp thoại **Tạo trang**."),
           L("Filter by **Space**, **Global**, or **Built-in** and preview the layout.", "Lọc theo **Space**, **Toàn cục**, hoặc **Có sẵn** và xem trước bố cục."),
           L("To reuse a page you already wrote, open ⋯ and choose **Save as template**.", "Để dùng lại một trang đã viết, mở menu ⋯ và chọn **Lưu làm mẫu**."),
         ],
@@ -1094,11 +941,11 @@ export function FeatureDiscovery() {
       },
       {
         id: "import-documents",
-        image: helpImg("import-dialog"),
-        imageSize: size(2100, 1350),
+        image: img("import-documents"),
+        imageSize: size(1000, 985),
         imageAlt: L(
-          "The Import pages from files dialog supporting Word, PDF, HTML, Markdown and AI review or translation",
-          "Hộp thoại Nhập trang từ tệp hỗ trợ Word, PDF, HTML, Markdown cùng tùy chọn rà soát và dịch bằng AI",
+          "The Import pages from files dialog supporting DOCX, PDF, XLSX, CSV, HTML, Markdown, Google Docs/Sheets and AI review or translation",
+          "Hộp thoại Nhập trang từ tệp hỗ trợ DOCX, PDF, XLSX, CSV, HTML, Markdown, liên kết Google Docs/Sheets cùng tùy chọn rà soát và dịch bằng AI",
         ),
         icon: <FileUp className="size-3.5" />,
         iconColor: "bg-teal-500/20 text-teal-600 dark:text-teal-400",
@@ -1115,7 +962,7 @@ export function FeatureDiscovery() {
         actionLinkLabel: L("Browse spaces", "Khám phá các Space"),
         steps: [
           L("Open a space and click the **Import** icon next to the page tree.", "Mở một space và bấm biểu tượng **Nhập** cạnh cây trang."),
-          L("Drop one or more files (`.docx`, `.pdf`, `.xlsx`, `.csv`, `.md`, `.html`...).", "Thả một hoặc nhiều tệp (`.docx`, `.pdf`, `.xlsx`, `.csv`, `.md`, `.html`...)."),
+          L("Drop one or more files (`.docx`, `.pdf`, `.xlsx`, `.csv`, `.md`, `.html`...) or paste a Google Docs/Sheets link.", "Thả một hoặc nhiều tệp (`.docx`, `.pdf`, `.xlsx`, `.csv`, `.md`, `.html`...) hoặc dán liên kết Google Docs/Sheets."),
           L("Optionally enable **Review with AI** or **Translate with AI**, then click **Import**.", "Có thể bật **Rà soát bằng AI** hoặc **Dịch bằng AI**, rồi bấm **Nhập**."),
         ],
         tip: L(
@@ -1126,11 +973,11 @@ export function FeatureDiscovery() {
       },
       {
         id: "bookmarks-and-pins",
-        image: helpImg("page-engagement-row"),
-        imageSize: size(2100, 375),
+        image: img("bookmarks-and-pins"),
+        imageSize: size(1200, 662),
         imageAlt: L(
-          "Page header actions showing Save for later, Pin page, Share and Favorite space star",
-          "Thanh thao tác đầu trang với Lưu xem sau, Ghim trang, Chia sẻ và đánh dấu sao Space yêu thích",
+          "Home My Knowledge tab and left sidebar showing Favourite spaces, Pinned pages, Liked pages and Saved for later",
+          "Thẻ Kiến thức của tôi trên Trang chủ và thanh bên trái hiển thị Space yêu thích, Trang đã ghim, Trang đã thích và Lưu xem sau",
         ),
         icon: <Bookmark className="size-3.5" />,
         iconColor: "bg-orange-500/20 text-orange-600 dark:text-orange-400",
@@ -1146,7 +993,7 @@ export function FeatureDiscovery() {
         actionLink: "/spaces",
         actionLinkLabel: L("Browse spaces", "Khám phá các Space"),
         steps: [
-          L("Click **Save for later** or **Pin page** in any page’s top action bar.", "Bấm **Lưu xem sau** hoặc **Ghim trang** trên thanh thao tác đầu trang."),
+          L("Click the **Save for later** (bookmark) or **Pin page** icon in any page’s top action bar.", "Bấm biểu tượng **Lưu xem sau** (dấu trang) hoặc **Ghim trang** trên thanh thao tác đầu trang."),
           L("Star a space next to its name to add it to **Favorite spaces**.", "Bấm ngôi sao cạnh tên space để thêm vào **Space yêu thích**."),
           L("Open **My Knowledge** on Home to filter everything and pick up to 5 sidebar shortcuts.", "Mở thẻ **Kiến thức của tôi** trên Trang chủ để lọc và chọn tối đa 5 lối tắt trên thanh bên."),
         ],
@@ -1158,10 +1005,11 @@ export function FeatureDiscovery() {
       },
       {
         id: "two-factor-auth",
-        previewKind: "two-factor-auth",
+        image: img("two-factor-auth"),
+        imageSize: size(896, 1156),
         imageAlt: L(
-          "Two-factor authentication setup with 6-digit TOTP verification code and recovery codes",
-          "Thiết lập xác thực hai lớp với mã TOTP 6 chữ số và mã khôi phục dùng một lần",
+          "Set up two-factor authentication dialog with QR code, manual setup key and 6-digit verification code input",
+          "Hộp thoại thiết lập xác thực hai lớp với mã QR, khóa thiết lập thủ công và ô nhập mã xác thực 6 chữ số",
         ),
         icon: <ShieldCheck className="size-3.5" />,
         iconColor: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
@@ -1177,22 +1025,23 @@ export function FeatureDiscovery() {
         actionLink: "/account",
         actionLinkLabel: L("Account security", "Bảo mật tài khoản"),
         steps: [
-          L("Go to **Your account → Security** and click **Enable 2FA**.", "Vào **Tài khoản → Bảo mật** và bấm **Bật 2FA**."),
+          L("Go to **Your account → Password & authentication** and click **Enable 2FA**.", "Vào **Tài khoản → Mật khẩu & xác thực** và bấm **Bật 2FA**."),
           L("Scan the locally generated QR code with your authenticator app and enter the 6-digit code.", "Quét mã QR tạo trực tiếp trên trình duyệt bằng ứng dụng xác thực và nhập mã 6 số."),
           L("Download your 10 one-time recovery codes (`.txt`) and store them safely.", "Tải về 10 mã khôi phục dùng một lần (`.txt`) và cất giữ cẩn thận."),
         ],
         tip: L(
-          "Need to switch phones later? Use **New QR code** in Account Security — your old authenticator stays active until the new one is verified.",
-          "Đổi điện thoại sau này? Dùng **Mã QR mới** trong Bảo mật tài khoản — ứng dụng cũ vẫn hoạt động cho đến khi xác nhận thiết bị mới.",
+          "Need to switch phones later? Use **New QR code** in **Password & authentication** — your old authenticator stays active until the new one is verified.",
+          "Đổi điện thoại sau này? Dùng **Mã QR mới** trong **Mật khẩu & xác thực** — ứng dụng cũ vẫn hoạt động cho đến khi xác nhận thiết bị mới.",
         ),
         helpTopic: "two-factor-auth",
       },
       {
         id: "profile-personalization",
-        previewKind: "profile-personalization",
+        image: img("profile-personalization"),
+        imageSize: size(1200, 765),
         imageAlt: L(
-          "Profile card with a status bubble, welcome effect picker and seasonal holiday calendar",
-          "Thẻ hồ sơ với bong bóng trạng thái, bộ chọn hiệu ứng chào mừng và lịch lễ hội theo mùa",
+          "Guest welcome effect picker showing interactive profile entrance effects like Phoenix, Hacker, Aurora, Sakura, Ocean and Vice City",
+          "Bộ chọn hiệu ứng chào mừng khách hiển thị các hiệu ứng tương tác cho hồ sơ như Phoenix, Hacker, Aurora, Sakura, Ocean và Vice City",
         ),
         icon: <Palette className="size-3.5" />,
         iconColor: "bg-rose-500/20 text-rose-600 dark:text-rose-400",
@@ -1200,8 +1049,8 @@ export function FeatureDiscovery() {
         badge: "Profile",
         title: L("Status bubble, welcome effects & holidays", "Trạng thái, hiệu ứng chào mừng & lịch lễ"),
         desc: L(
-          "Share a quick status bubble above your avatar, choose from 15 welcome effects, and browse upcoming workspace holidays.",
-          "Chia sẻ bong bóng trạng thái trên ảnh đại diện, chọn từ 15 hiệu ứng chào mừng và xem lịch lễ hội sắp tới.",
+          "Share a quick status bubble above your avatar, choose from 40+ welcome effects, and browse upcoming workspace holidays.",
+          "Chia sẻ bong bóng trạng thái trên ảnh đại diện, chọn từ hơn 40 hiệu ứng chào mừng và xem lịch lễ hội sắp tới.",
         ),
         guideLabel: learn,
         actionLabel: L("Customize profile", "Tùy chỉnh hồ sơ"),
@@ -1209,7 +1058,7 @@ export function FeatureDiscovery() {
         actionLinkLabel: L("Customize profile", "Tùy chỉnh hồ sơ"),
         steps: [
           L("Click **What’s happening?** above your avatar on Home to set a status with an expiry time.", "Bấm **What’s happening?** phía trên ảnh đại diện ở Trang chủ để đặt trạng thái có hạn tự xóa."),
-          L("Click the palette icon on your cover card to pick one of 15 interactive welcome effects.", "Bấm biểu tượng bảng màu trên ảnh bìa để chọn 1 trong 15 hiệu ứng chào mừng."),
+          L("Click the palette icon on your cover card to pick from 40+ interactive welcome effects.", "Bấm biểu tượng bảng màu trên ảnh bìa để chọn từ hơn 40 hiệu ứng chào mừng tương tác."),
           L("Use the **Calendar** card under your profile to browse upcoming holidays and seasonal themes.", "Dùng thẻ **Lịch** dưới hồ sơ để xem các ngày lễ và chủ đề mùa lễ hội sắp tới."),
         ],
         tip: L(
@@ -1347,19 +1196,15 @@ export function FeatureDiscovery() {
                   )}
                 >
                   <div>
-                    {/* Real screenshot or themed UI preview */}
+                    {/* Real screenshot of the app */}
                     <div className="border-border/60 bg-surface-sunken mb-2 aspect-[3/1] overflow-hidden rounded-md border">
-                      {slide.image ? (
-                        /* eslint-disable-next-line @next/next/no-img-element -- static capture; no optimisation needed */
-                        <img
-                          src={slide.image}
-                          alt=""
-                          loading="lazy"
-                          className="size-full object-cover object-top"
-                        />
-                      ) : (
-                        <FeaturePreview kind={slide.previewKind!} isVi={isVi} compact />
-                      )}
+                      {/* eslint-disable-next-line @next/next/no-img-element -- static capture; no optimisation needed */}
+                      <img
+                        src={slide.image}
+                        alt=""
+                        loading="lazy"
+                        className="size-full object-cover object-top"
+                      />
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
@@ -1453,7 +1298,7 @@ export function FeatureDiscovery() {
             <DialogPrimitive.Overlay className="bg-background/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 backdrop-blur-xs duration-150" />
             <DialogPrimitive.Content
               className={cn(
-                "border-border bg-surface fixed top-[4%] left-[50%] z-50 flex max-h-[92vh] w-[95vw] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border shadow-2xl outline-none duration-200 sm:w-[92vw] md:max-w-4xl lg:max-w-5xl",
+                "border-border bg-surface fixed top-1/2 left-1/2 z-50 flex h-[min(660px,88vh)] w-[95vw] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border shadow-2xl outline-none duration-200 sm:w-[92vw] md:max-w-4xl lg:max-w-5xl",
                 "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
                 "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
               )}
@@ -1462,7 +1307,7 @@ export function FeatureDiscovery() {
                 else if (e.key === "ArrowLeft") stepGuide(-1);
               }}
             >
-              <div className="border-border bg-surface flex items-start justify-between gap-3 border-b px-6 py-4">
+              <div className="border-border bg-surface flex shrink-0 items-start justify-between gap-3 border-b px-6 py-4">
                 <div className="flex min-w-0 items-center gap-3.5">
                   <span
                     className={cn(
@@ -1515,42 +1360,28 @@ export function FeatureDiscovery() {
                 </div>
               </div>
 
-              <div className="flex-1 space-y-5 overflow-y-auto p-6">
-                <div className="grid grid-cols-1 content-start items-start gap-x-6 gap-y-5 md:grid-cols-12">
-                {/* Real capture of the app or themed UI preview */}
-                <figure className="border-border bg-surface-sunken overflow-hidden rounded-xl border shadow-xs md:col-span-7">
-                  <div className="group overflow-hidden">
-                    {selectedFeature.image ? (
-                      /* eslint-disable-next-line @next/next/no-img-element -- static capture; no optimisation needed */
-                      <img
-                        src={selectedFeature.image}
-                        alt={selectedFeature.imageAlt}
-                        width={selectedFeature.imageSize?.[0]}
-                        height={selectedFeature.imageSize?.[1]}
-                        className="mx-auto block h-auto max-h-[62vh] w-full object-contain transition-transform duration-300 ease-out group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                      />
-                    ) : (
-                      <div
-                        role="img"
-                        aria-label={selectedFeature.imageAlt}
-                        className="aspect-[16/10] w-full"
-                      >
-                        <FeaturePreview kind={selectedFeature.previewKind!} isVi={isVi} />
-                      </div>
-                    )}
+              <div className="min-h-0 flex-1 overflow-y-auto p-6 md:overflow-hidden">
+                <div className="grid grid-cols-1 content-start items-start gap-x-6 gap-y-5 md:h-full md:grid-cols-12 md:content-stretch md:items-stretch">
+                {/* Real capture of the app */}
+                <figure className="border-border bg-surface-sunken flex flex-col overflow-hidden rounded-xl border shadow-xs md:col-span-7 md:h-full">
+                  <div className="bg-surface group flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- static capture; no optimisation needed */}
+                    <img
+                      src={selectedFeature.image}
+                      alt={selectedFeature.imageAlt}
+                      width={selectedFeature.imageSize[0]}
+                      height={selectedFeature.imageSize[1]}
+                      className="max-h-[420px] max-w-full h-auto w-auto object-contain transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100 md:max-h-full"
+                    />
                   </div>
-                  <figcaption className="border-border text-muted-foreground border-t px-3 py-1.5 text-[11px]">
-                    {selectedFeature.image
-                      ? isVi
-                        ? "Ảnh chụp thật từ WikiHub (dữ liệu minh họa)"
-                        : "Real screenshot from WikiHub (sample data)"
-                      : isVi
-                        ? "Minh họa tính năng WikiHub"
-                        : "WikiHub feature preview"}
+                  <figcaption className="border-border text-muted-foreground shrink-0 border-t px-3 py-1.5 text-[11px]">
+                    {isVi
+                      ? "Ảnh chụp thật từ WikiHub (dữ liệu minh họa)"
+                      : "Real screenshot from WikiHub (sample data)"}
                   </figcaption>
                 </figure>
 
-                <div className="space-y-5 md:col-span-5">
+                <div className="min-h-0 space-y-5 md:col-span-5 md:overflow-y-auto md:pr-1">
                   {PURPOSE[selectedFeature.id] && (
                     <div>
                       <h4 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
@@ -1605,7 +1436,7 @@ export function FeatureDiscovery() {
                 </div>
               </div>
 
-              <div className="border-border bg-surface-sunken flex items-center justify-between border-t px-6 py-3.5 text-xs">
+              <div className="border-border bg-surface-sunken flex shrink-0 items-center justify-between border-t px-6 py-3.5 text-xs">
                 <Link
                   href={`/help#${selectedFeature.helpTopic}`}
                   onClick={() => setSelectedFeature(null)}

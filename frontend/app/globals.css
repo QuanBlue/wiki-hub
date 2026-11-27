@@ -1617,6 +1617,23 @@ html[data-export="true"] .mermaid-render-output {
   cursor: default !important;
 }
 
+/* Keep editor/reader paragraph margins from distorting Mermaid foreignObject
+   labels, and give edge labels an opaque background so connector paths don't
+   strike through label text. */
+.mermaid-render-output p {
+  margin: 0 !important;
+}
+.mermaid-render-output .edgeLabel .labelBkg,
+.mermaid-render-output .edgeLabel p {
+  background-color: var(--mermaid-label-bg, var(--card)) !important;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.mermaid-render-output .edgeLabel rect {
+  opacity: 1 !important;
+  fill: var(--mermaid-label-bg, var(--card)) !important;
+}
+
 /* Export tables: remove the interactive editor's 96px minimum cell width so
    narrow columns (e.g. STT 4%, Port 5%) keep their exact percentage widths
    and wide 8-9 column tables fit cleanly on A4 without overflowing. Crisp
@@ -1628,12 +1645,31 @@ html[data-export="true"] .wikihub-reader table {
 }
 html[data-export="true"] .wikihub-reader th,
 html[data-export="true"] .wikihub-reader td {
+  position: static !important;
   min-width: 0 !important;
-  padding: 5px 7px !important;
+  padding: 5px 7px;
   line-height: 1.35 !important;
   border-color: var(--border-strong);
   overflow-wrap: break-word;
   word-break: normal;
+}
+html[data-export="true"] .wikihub-reader td[style*="border: 0"],
+html[data-export="true"] .wikihub-reader th[style*="border: 0"],
+html[data-export="true"] .wikihub-reader td[style*="border:0"],
+html[data-export="true"] .wikihub-reader th[style*="border:0"] {
+  border-color: transparent;
+}
+html[data-export="true"] .wikihub-reader td:has(> .tableWrapper),
+html[data-export="true"] .wikihub-reader td:has(> table) {
+  padding: 24px 28px !important;
+}
+html[data-export="true"] .wikihub-reader td .tableWrapper {
+  margin: 0 !important;
+  overflow: visible !important;
+}
+html[data-export="true"] .wikihub-reader td table th,
+html[data-export="true"] .wikihub-reader td table td {
+  padding: 3px 6px;
 }
 html[data-export="true"] .wikihub-reader th p,
 html[data-export="true"] .wikihub-reader td p {
@@ -1660,10 +1696,19 @@ html[data-export="true"] .wikihub-reader td p:last-child {
     overflow: visible !important;
   }
 
+  html[data-export="true"] .wikihub-reader .ProseMirror > .tableWrapper:first-child:has(td table) {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  html[data-export="true"] .wikihub-reader td:not([style*="background-color"]) {
+    background-color: transparent !important;
+  }
+
   html[data-export="true"] .wikihub-reader th,
   html[data-export="true"] .wikihub-reader td {
-    padding: 4px 6px !important;
-    font-size: 0.78rem !important;
+    padding: 4px 6px;
+    font-size: 0.82rem;
   }
 
   html[data-export="true"] pre,
@@ -1704,9 +1749,7 @@ html[data-export="true"] .wikihub-reader td p:last-child {
   h4 {
     break-after: avoid;
   }
-  tr,
-  td,
-  th {
+  tr {
     break-inside: avoid;
   }
   thead {

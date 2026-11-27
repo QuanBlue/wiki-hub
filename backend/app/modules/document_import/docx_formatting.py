@@ -17,6 +17,7 @@ _DOCX_HEX = re.compile(r"^[0-9a-fA-F]{6}$")
 
 _NO_BORDER_CSS = "0px solid transparent"
 _DEFAULT_BORDER_COLOR = "var(--border-strong)"
+_FRAME_BORDER_COLOR = "var(--foreground)"
 
 _OOXML_BORDER_STYLE_MAP: dict[str, str] = {
     "none": "none",
@@ -111,10 +112,15 @@ def _enrich_docx_table_formatting(html: str, source: Path) -> str:
 
     html_tables = soup.find_all("table")
     docx_tables = document.findall(".//w:tbl", _DOCX_NS)
+    pending_splits: list[tuple[Tag, int]] = []
     for html_table, docx_table in zip(html_tables, docx_tables, strict=False):
-        _enrich_single_docx_table(
+        split_at = _enrich_single_docx_table(
             soup, html_table, docx_table, table_styles, default_table_style
         )
+        if split_at is not None and html_table.find_parent("table") is None:
+            pending_splits.append((html_table, split_at))
+    for html_table, split_at in pending_splits:
+        _split_html_table_at_row(soup, html_table, split_at)
     return str(soup)
 
 
@@ -253,7 +259,12 @@ def _parse_ooxml_border(border: Any) -> str | None:
     else:
         width = "4px"
 
-    color = f"#{raw_color.lower()}" if _DOCX_HEX.fullmatch(raw_color) else _DEFAULT_BORDER_COLOR
+    if _DOCX_HEX.fullmatch(raw_color):
+        color = f"#{raw_color.lower()}"
+    elif css_style == "double" or sz >= 16:
+        color = _FRAME_BORDER_COLOR
+    else:
+        color = _DEFAULT_BORDER_COLOR
 
     return f"{width} {css_style} {color}"
 
@@ -492,13 +503,112 @@ def _demote_layout_header_row(soup: BeautifulSoup, html_table: Tag, first_row: T
     thead.decompose()
 
 
+def _docx_row_starts_with_page_break(docx_row: Any) -> bool:
+    first_cell = docx_row.find("./w:tc", _DOCX_NS)
+    if first_cell is None:
+        return False
+    first_p = first_cell.find("./w:p", _DOCX_NS)
+    if first_p is None:
+        return False
+    if first_p.find("./w:pPr/w:pageBreakBefore", _DOCX_NS) is not None:
+        return True
+    for br in first_p.findall("./w:r/w:br", _DOCX_NS):
+        if (br.get(f"{_W}type") or "").strip().lower() == "page":
+            return True
+    return False
+
+
+def _split_html_table_at_row(soup: BeautifulSoup, html_table: Tag, split_index: int) -> None:
+    """Split a Word cover-frame + data-table hybrid into two clean tables."""
+    all_rows = _direct_html_table_rows(html_table)
+    if split_index <= 0 or split_index >= len(all_rows):
+        return
+
+    top_rows = all_rows[:split_index]
+    bottom_rows = all_rows[split_index:]
+
+    second_table = soup.new_tag("table")
+    if html_table.get("style"):
+        second_table["style"] = html_table["style"]
+    second_tbody = soup.new_tag("tbody")
+    for row in bottom_rows:
+        second_tbody.append(row.extract())
+    second_table.append(second_tbody)
+
+    # Clean up stale multi-column `colspan` on the now 1-column cover table.
+    for row in top_rows:
+        cells = row.find_all(["th", "td"], recursive=False)
+        if len(cells) == 1:
+            cells[0].attrs.pop("colspan", None)
+
+    # Pandoc turns the leading `<w:br w:type="page"/>` into a stray `<br/>`
+    # at the top of the first cell of the split-off table; remove it so the
+    # header label aligns with its sibling cells.
+    first_bottom_cell = bottom_rows[0].find(["th", "td"], recursive=False)
+    if first_bottom_cell is not None:
+        first_br = first_bottom_cell.find("br")
+        if first_br is not None:
+            preceding = "".join(
+                str(s) for s in first_br.previous_siblings if isinstance(s, str)
+            ).strip()
+            if not preceding:
+                first_br.decompose()
+
+    html_table.insert_after(second_table)
+
+
+def _docx_row_height_px(docx_row: Any) -> int | None:
+    tr_height = docx_row.find("./w:trPr/w:trHeight", _DOCX_NS)
+    if tr_height is None:
+        return None
+    raw = tr_height.get(f"{_W}val")
+    try:
+        twips = int(raw or "0")
+    except ValueError:
+        return None
+    if twips < 900:
+        return None
+    return min(140, max(36, round(twips / 30)))
+
+
+def _insert_cover_cell_spacers(
+    soup: BeautifulSoup,
+    html_cell: Tag,
+    docx_cell: Any,
+    html_paragraphs: list[Tag],
+    docx_paragraphs: list[Any],
+) -> None:
+    """Preserve intentional vertical blank-line gaps inside cover/frame cells."""
+    if not html_paragraphs or not docx_paragraphs:
+        return
+    p_to_html = dict(zip(docx_paragraphs, html_paragraphs, strict=False))
+    empty_run = 0
+    seen_content = False
+    for child in docx_cell:
+        if child.tag == f"{_W}tbl":
+            seen_content = True
+            empty_run = 0
+        elif child.tag == f"{_W}p":
+            if child in p_to_html:
+                if seen_content and empty_run >= 2:
+                    target = p_to_html[child]
+                    for _ in range(min(3, empty_run // 2)):
+                        spacer = soup.new_tag("p")
+                        spacer.append(soup.new_tag("br"))
+                        target.insert_before(spacer)
+                seen_content = True
+                empty_run = 0
+            elif not "".join(child.itertext()).strip():
+                empty_run += 1
+
+
 def _enrich_single_docx_table(
     soup: BeautifulSoup,
     html_table: Tag,
     docx_table: Any,
     table_styles: dict[str, dict[str, str]],
     default_table_style: str | None,
-) -> None:
+) -> int | None:
     column_widths = _docx_table_column_widths(docx_table)
     total_width = sum(column_widths)
     if total_width:
@@ -507,7 +617,7 @@ def _enrich_single_docx_table(
     html_rows = _direct_html_table_rows(html_table)
     docx_rows = docx_table.findall("./w:tr", _DOCX_NS)
     if not html_rows or not docx_rows:
-        return
+        return None
 
     row_real_cells, grid, num_cols = _build_docx_table_grid(docx_rows)
     tbl_defaults = _table_border_defaults(docx_table, table_styles, default_table_style)
@@ -517,6 +627,12 @@ def _enrich_single_docx_table(
         len(docx_rows),
         max(num_cols, len(column_widths)),
         tbl_defaults,
+    )
+
+    table_is_borderless = all(
+        all(v == _NO_BORDER_CSS for v in sides_by_cell[id(cell)].values())
+        for r_cells in row_real_cells
+        for cell in r_cells
     )
 
     # Pandoc promotes row 0 of almost every Word table into `<thead><th>`, which
@@ -533,15 +649,25 @@ def _enrich_single_docx_table(
         first_row_has_nested_table = any(
             cell.tc.find("./w:tbl", _DOCX_NS) is not None for cell in row_real_cells[0]
         )
-        table_is_borderless = all(
-            all(v == _NO_BORDER_CSS for v in sides_by_cell[id(cell)].values())
-            for r_cells in row_real_cells
-            for cell in r_cells
-        )
         if not first_row_has_shading and (first_row_has_nested_table or table_is_borderless):
             _demote_layout_header_row(soup, html_table, html_rows[0])
 
-    for html_row, real_cells in zip(html_rows, row_real_cells, strict=False):
+    # Detect a cover-page frame fused onto a multi-column table across a page break.
+    split_index: int | None = None
+    for idx in range(1, min(len(docx_rows), len(html_rows))):
+        if (
+            _docx_row_starts_with_page_break(docx_rows[idx])
+            and len(row_real_cells[idx]) >= 2
+            and all(len(row_real_cells[r]) == 1 for r in range(idx))
+        ):
+            split_index = idx
+            break
+
+    for html_row, docx_row, real_cells in zip(html_rows, docx_rows, row_real_cells, strict=False):
+        if table_is_borderless:
+            height_px = _docx_row_height_px(docx_row)
+            if height_px is not None:
+                _merge_inline_style(html_row, "height", f"{height_px}px")
         html_cells = html_row.find_all(["th", "td"], recursive=False)
         for html_cell, grid_cell in zip(html_cells, real_cells, strict=False):
             docx_cell = grid_cell.tc
@@ -580,6 +706,9 @@ def _enrich_single_docx_table(
                 color = _docx_paragraph_color(docx_paragraphs[0])
                 if color:
                     _merge_inline_style(html_cell, "color", color)
+                font_size = _docx_paragraph_font_size(docx_paragraphs[0])
+                if font_size:
+                    _merge_inline_style(html_cell, "font-size", font_size)
             for html_paragraph, docx_paragraph in zip(
                 html_paragraphs, docx_paragraphs, strict=False
             ):
@@ -592,22 +721,26 @@ def _enrich_single_docx_table(
                     _rebuild_paragraph_from_docx_runs(html_paragraph, docx_paragraph)
                     continue
                 color = _docx_paragraph_color(docx_paragraph)
-                if color:
-                    if len(docx_paragraphs) == 1:
-                        # A `<td>`'s own `color` attribute is part of the
-                        # editor's table-cell schema (see
-                        # `TableCellWithBackground` in the frontend), so
-                        # setting it here is enough to survive a round-trip
-                        # through the editor.
-                        _merge_inline_style(html_cell, "color", color)
-                    else:
-                        # A paragraph has no such attribute, so a color set
-                        # directly on it would be silently dropped the moment
-                        # this HTML loads into the editor. Wrapping its
-                        # content in a `<span style="color:...">` instead is
-                        # what the text-color mark actually parses (see
-                        # `TextStyleMark` in the frontend).
-                        _wrap_docx_paragraph_color(html_paragraph, color)
+                font_size = _docx_paragraph_font_size(docx_paragraph)
+                if color and len(docx_paragraphs) == 1:
+                    # A `<td>`'s own `color` attribute is part of the editor's
+                    # table-cell schema (`TableCellWithBackground`), so setting
+                    # it here survives a round-trip through the editor.
+                    _merge_inline_style(html_cell, "color", color)
+                    color = None
+                if font_size and len(docx_paragraphs) == 1:
+                    _merge_inline_style(html_cell, "font-size", font_size)
+                    font_size = None
+                if color or font_size:
+                    _wrap_docx_paragraph_inline_style(
+                        html_paragraph, color=color, font_size=font_size
+                    )
+            if docx_cell.find("./w:tbl", _DOCX_NS) is not None:
+                _insert_cover_cell_spacers(
+                    soup, html_cell, docx_cell, html_paragraphs, docx_paragraphs
+                )
+
+    return split_index
 
 
 def _normalize_match_text(text: str) -> str:
@@ -793,6 +926,37 @@ def _docx_paragraph_color(paragraph: Any) -> str | None:
     return None
 
 
+def _docx_paragraph_font_size(paragraph: Any) -> str | None:
+    """Return a CSS ``px`` font size when a paragraph uses display-sized type (``>= 14pt``).
+
+    OOXML ``w:sz`` is measured in half-points (``28`` = 14pt, ``37`` = 18.5pt).
+    Normal body/table text (10-13pt) is left to WikiHub's theme typography;
+    larger display sizes (cover titles, subtitles, document dates) are carried
+    through so visual hierarchy survives import.
+    """
+    sizes: list[int] = []
+    for run in paragraph.findall("./w:r", _DOCX_NS):
+        if not _docx_run_text(run).strip():
+            continue
+        sz_el = run.find("./w:rPr/w:sz", _DOCX_NS)
+        if sz_el is None:
+            continue
+        raw = (sz_el.get(f"{_W}val") or "").strip()
+        try:
+            val = int(raw)
+        except ValueError:
+            continue
+        if val > 0:
+            sizes.append(val)
+    if not sizes:
+        return None
+    largest = max(sizes)
+    if largest < 28:
+        return None
+    px = min(48, max(16, round(largest * 2 / 3)))
+    return f"{px}px"
+
+
 #: Fonts that mean "this text is meant to line up in fixed-width columns" -
 #: a hand-built code sample or box-drawn diagram, never ordinary prose.
 _MONOSPACE_FONTS = frozenset(
@@ -847,6 +1011,9 @@ def _docx_run_has_flag(run: Any, tag_name: str) -> bool:
     return val not in {"0", "false", "none"}
 
 
+_COLON_DOUBLE_SPACE = re.compile(r":  (?=\S)")
+
+
 def _docx_paragraph_needs_raw_rebuild(paragraph: Any) -> bool:
     """True where Pandoc's own rendering of this paragraph loses its shape.
 
@@ -855,13 +1022,21 @@ def _docx_paragraph_needs_raw_rebuild(paragraph: Any) -> bool:
     named style, which it can carry over). Neither loss is visible on an
     ordinary paragraph, but a paragraph set in a monospace font, or leaning
     on two or more consecutive non-trailing spaces to line up columns, is
-    typically a code sample or a box-drawn diagram.
+    typically a code sample or a box-drawn diagram. Centered or justified
+    paragraphs are never column-aligned code/diagrams unless explicitly set
+    in a monospace font.
     """
-    for run in paragraph.findall("./w:r", _DOCX_NS):
+    runs = paragraph.findall("./w:r", _DOCX_NS)
+    for run in runs:
         font = _docx_run_font(run)
         if font is not None and font in _MONOSPACE_FONTS:
             return True
-        if "  " in _docx_run_text(run).rstrip(" "):
+    alignment = _docx_paragraph_alignment(paragraph)
+    if alignment in {"center", "justify"}:
+        return False
+    for run in runs:
+        cleaned = _COLON_DOUBLE_SPACE.sub(": ", _docx_run_text(run).rstrip(" "))
+        if "  " in cleaned:
             return True
     return False
 
@@ -903,24 +1078,30 @@ def _rebuild_paragraph_from_docx_runs(html_paragraph: Tag, docx_paragraph: Any) 
         html_paragraph.append(span)
 
 
-def _wrap_docx_paragraph_color(paragraph: Tag, color: str) -> None:
-    """Wrap a paragraph's content in a colored span rather than the paragraph.
-
-    A `<p style="color:...">` has no home in the editor's schema - a
-    paragraph node carries no such attribute, so the color is silently
-    dropped the moment this HTML loads. Wrapping the paragraph's existing
-    content in a `<span style="color:...">` instead is what the text-color
-    mark parses, and preserves whatever Pandoc already rendered inside it
-    (bold, links, and the rest) rather than replacing it.
-    """
+def _wrap_docx_paragraph_inline_style(
+    paragraph: Tag, *, color: str | None = None, font_size: str | None = None
+) -> None:
+    """Wrap a paragraph's content in a styled span that Tiptap's TextStyleMark parses."""
     if not paragraph.contents:
         return
+    parts: list[str] = []
+    if color:
+        parts.append(f"color: {color}")
+    if font_size:
+        parts.append(f"font-size: {font_size}")
+    if not parts:
+        return
     factory = BeautifulSoup("", "html.parser")
-    wrapper = factory.new_tag("span", attrs={"style": f"color: {color}"})
+    wrapper = factory.new_tag("span", attrs={"style": "; ".join(parts)})
     for child in list(paragraph.contents):
         child.extract()
         wrapper.append(child)
     paragraph.append(wrapper)
+
+
+def _wrap_docx_paragraph_color(paragraph: Tag, color: str) -> None:
+    """Wrap a paragraph's content in a colored span rather than the paragraph."""
+    _wrap_docx_paragraph_inline_style(paragraph, color=color)
 
 
 def _merge_inline_style(element: Tag, property_name: str, value: str) -> None:

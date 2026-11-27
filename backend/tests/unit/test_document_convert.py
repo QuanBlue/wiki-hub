@@ -413,6 +413,64 @@ class TestDocxTableFormatting:
         # Pure black on unshaded body prose is omitted so dark mode stays readable.
         assert "#000000" not in str(paragraphs[1])
 
+    def test_cover_frame_splits_at_page_break_and_preserves_display_sizes_and_spacers(
+        self, tmp_path
+    ):
+        document = (
+            "<w:tbl><w:tblPr><w:tblBorders>"
+            '<w:top w:val="thinThickSmallGap" w:sz="24" w:color="auto"/>'
+            '<w:left w:val="thinThickSmallGap" w:sz="24" w:color="auto"/>'
+            '<w:bottom w:val="thickThinSmallGap" w:sz="24" w:color="auto"/>'
+            '<w:right w:val="thickThinSmallGap" w:sz="24" w:color="auto"/>'
+            "</w:tblBorders></w:tblPr>"
+            '<w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid>'
+            "<w:tr><w:tc><w:tcPr><w:gridSpan w:val='2'/></w:tcPr>"
+            "<w:tbl><w:tblPr><w:tblBorders>"
+            '<w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/>'
+            '<w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/>'
+            "</w:tblBorders></w:tblPr>"
+            '<w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:trHeight w:val="2400"/></w:trPr>'
+            '<w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+            '<w:r><w:t>DOANH  NGHIỆP</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+            "<w:p/><w:p/><w:p/><w:p/>"
+            '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+            '<w:r><w:rPr><w:sz w:val="37"/><w:b/></w:rPr><w:t>HỒ SƠ KỸ THUẬT</w:t></w:r></w:p>'
+            "</w:tc></w:tr>"
+            "<w:tr>"
+            '<w:tc><w:tcPr><w:shd w:fill="2F5496"/></w:tcPr>'
+            '<w:p><w:r><w:br w:type="page"/></w:r><w:r><w:t>STT</w:t></w:r></w:p></w:tc>'
+            '<w:tc><w:tcPr><w:shd w:fill="2F5496"/></w:tcPr>'
+            "<w:p><w:r><w:t>Nội dung</w:t></w:r></w:p></w:tc>"
+            "</w:tr></w:tbl>"
+        )
+        html = (
+            "<table><thead><tr><th colspan='2'>"
+            "<table><tr><td><p>DOANH NGHIỆP</p></td></tr></table>"
+            "<p><strong>HỒ SƠ KỸ THUẬT</strong></p>"
+            "</th></tr></thead><tbody>"
+            "<tr><td><strong><br/>STT</strong></td><td><strong>Nội dung</strong></td></tr>"
+            "</tbody></table>"
+        )
+        result = self._enrich(tmp_path, document, html)
+        soup = BeautifulSoup(result, "html.parser")
+        top_tables = soup.find_all("table", recursive=False)
+        assert len(top_tables) == 2
+
+        cover_cell = top_tables[0].find("td")
+        assert cover_cell is not None
+        assert "colspan" not in cover_cell.attrs
+        assert "4px double var(--foreground)" in cover_cell["style"]
+        assert "font-size: 25px" in str(cover_cell)
+        assert "ui-monospace" not in str(cover_cell)
+        assert len(cover_cell.find_all("br")) >= 2
+        inner_row = cover_cell.find("table").find("tr")
+        assert "height: 80px" in inner_row["style"]
+
+        rev_first_cell = top_tables[1].find("td")
+        assert rev_first_cell.find("br") is None
+        assert rev_first_cell.get_text(strip=True) == "STT"
+
 
 class TestHtmlTableFormatting:
     @pytest.mark.asyncio

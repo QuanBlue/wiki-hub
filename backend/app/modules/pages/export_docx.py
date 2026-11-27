@@ -787,6 +787,7 @@ def _annotate_inline_styles_for_pandoc(html: str) -> str:
         styles = _parse_inline_style(str(tag.get("style") or ""))
         fg_hex = _parse_color(styles.get("color"))
         bg_hex = _parse_color(styles.get("background-color"))
+        font_size_px_match = _PX_RE.match(styles.get("font-size", ""))
         if tag.name == "mark" and not bg_hex:
             bg_hex = "fef08a"
         parts: list[str] = []
@@ -794,6 +795,10 @@ def _annotate_inline_styles_for_pandoc(html: str) -> str:
             parts.append(f"c={fg_hex.lower()}")
         if bg_hex:
             parts.append(f"b={bg_hex.lower()}")
+        if font_size_px_match:
+            px_val = float(font_size_px_match.group(1))
+            pt_tenths = max(70, min(720, round(px_val * 7.5)))
+            parts.append(f"s={pt_tenths}")
         if parts:
             tag.name = "span"
             tag["custom-style"] = "WH Inline " + " ".join(parts)
@@ -802,7 +807,7 @@ def _annotate_inline_styles_for_pandoc(html: str) -> str:
 
 
 def _apply_inline_custom_styles(document: Any) -> None:
-    """Paint the paragraph alignment and inline span color/highlight styles
+    """Paint the paragraph alignment and inline span color/highlight/size styles
     created by Pandoc from ``_annotate_inline_styles_for_pandoc``."""
     for style in document.styles:
         align = _WH_ALIGN_STYLE_MAP.get(style.name)
@@ -823,6 +828,8 @@ def _apply_inline_custom_styles(document: Any) -> None:
                 shd.set(qn("w:color"), "auto")
                 shd.set(qn("w:fill"), token[2:])
                 rpr.append(shd)
+            elif token.startswith("s=") and token[2:].isdigit():
+                style.font.size = Pt(int(token[2:]) / 10.0)
 
 
 def _set_table_width(table: Any, width: int, width_type: str) -> None:
@@ -983,6 +990,11 @@ def _parse_css_border_spec(
         return ("nil", "0", "auto")
     if not color_hex:
         return None
+    if ooxml_val == "double":
+        # OOXML `double` draws two strokes plus an equal-width gap (3x total
+        # thickness), so scale down from CSS px to keep double frames crisp.
+        sz_int = int(sz)
+        sz = "12" if sz_int >= 24 else ("6" if sz_int >= 12 else "4")
     return (ooxml_val, sz, color_hex)
 
 
@@ -1043,9 +1055,11 @@ def _set_tc_width(tc: Any, twips: int) -> None:
     tc_pr.insert_element_before(tc_w, "w:gridSpan", "w:vMerge", "w:tcBorders", "w:shd", "w:vAlign")
 
 
-def _extract_html_col_widths(html_table: Tag, num_cols: int) -> list[int] | None:
+def _extract_html_col_widths(
+    html_table: Tag, num_cols: int, *, total_twips: int = _CONTENT_WIDTH_TWIPS
+) -> list[int] | None:
     """Extract proportional column widths (in twips summing to
-    ``_CONTENT_WIDTH_TWIPS``) from HTML ``style="width: X%"``,
+    ``total_twips``) from HTML ``style="width: X%"``,
     ``style="width: Npx"``, or TipTap ``colwidth`` attributes, respecting
     ``colspan`` and ``rowspan``."""
     if num_cols <= 0:
@@ -1094,8 +1108,8 @@ def _extract_html_col_widths(html_table: Tag, num_cols: int) -> list[int] | None
         avg = sum(known) / len(known)
         filled = [v if (v is not None and v > 0) else avg for v in values]
         total = sum(filled)
-        scaled = [max(580, round(_CONTENT_WIDTH_TWIPS * v / total)) for v in filled]
-        diff = _CONTENT_WIDTH_TWIPS - sum(scaled)
+        scaled = [max(580, round(total_twips * v / total)) for v in filled]
+        diff = total_twips - sum(scaled)
         scaled[-1] = max(580, scaled[-1] + diff)
         return scaled
 
@@ -1154,8 +1168,7 @@ def _set_compact_cell_paragraph(p_el: Any, jc_val: str | None) -> None:
     ppr.append(spacing)
 
     if jc_val:
-        existing_jc = ppr.find(qn("w:jc"))
-        if existing_jc is not None:
+        for existing_jc in list(ppr.findall(qn("w:jc"))):
             ppr.remove(existing_jc)
         jc = OxmlElement("w:jc")
         jc.set(qn("w:val"), jc_val)
@@ -1182,15 +1195,186 @@ def _clean_pandoc_table_style(document: Any) -> None:
             table_style.element.remove(tbl_style_pr)
 
 
+def _html_starts_with_cover_frame(html: str) -> bool:
+    """True when the page begins with a framed cover-page table containing a nested layout table."""
+    return bool(re.match(r"^\s*<table\b[\s\S]*?<table\b", html or "", re.IGNORECASE))
+
+
+def _set_tr_height(tr_pr: Any, height_px: float) -> None:
+    twips = max(240, min(14400, round(height_px * 15)))
+    existing = tr_pr.find(qn("w:trHeight"))
+    if existing is not None:
+        tr_pr.remove(existing)
+    tr_height = OxmlElement("w:trHeight")
+    tr_height.set(qn("w:val"), str(twips))
+    tr_height.set(qn("w:hRule"), "atLeast")
+    tr_pr.append(tr_height)
+
+
+def _set_tc_margins(tc: Any, *, top: int, bottom: int, left: int, right: int) -> None:
+    tc_pr = tc.get_or_add_tcPr()
+    existing = tc_pr.find(qn("w:tcMar"))
+    if existing is not None:
+        tc_pr.remove(existing)
+    tc_mar = OxmlElement("w:tcMar")
+    for side, val in (("top", top), ("left", left), ("bottom", bottom), ("right", right)):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:w"), str(val))
+        el.set(qn("w:type"), "dxa")
+        tc_mar.append(el)
+    tc_pr.append(tc_mar)
+
+
+def _insert_page_break_after_table(doc_table: Any) -> None:
+    p = OxmlElement("w:p")
+    r = OxmlElement("w:r")
+    br = OxmlElement("w:br")
+    br.set(qn("w:type"), "page")
+    r.append(br)
+    p.append(r)
+    doc_table._tbl.addnext(p)
+
+
+def _style_one_table(
+    doc_table: Any,
+    html_table: Tag,
+    theme: dict[str, str],
+    header_bg: str,
+    *,
+    available_twips: int = _CONTENT_WIDTH_TWIPS,
+) -> None:
+    from docx.table import Table
+
+    num_cols = len(doc_table.columns)
+    is_wide_table = num_cols >= 7
+    col_widths = _extract_html_col_widths(html_table, num_cols, total_twips=available_twips)
+    if col_widths:
+        _apply_col_widths(doc_table, col_widths)
+
+    html_rows = [
+        tr for tr in html_table.find_all("tr") if tr.find_parent("table") is html_table
+    ]
+    table_has_custom_bg = any(
+        _parse_color(_parse_inline_style(str(c.get("style") or "")).get("background-color"))
+        for tr in html_rows
+        for c in tr.find_all(["th", "td"], recursive=False)
+    )
+
+    for doc_row, html_row in zip(doc_table.rows, html_rows, strict=False):
+        tr_pr = doc_row._tr.get_or_add_trPr()
+        if tr_pr.find(qn("w:cantSplit")) is None:
+            tr_pr.append(OxmlElement("w:cantSplit"))
+        row_styles = _parse_inline_style(str(html_row.get("style") or ""))
+        row_height_match = _PX_RE.match(row_styles.get("height", ""))
+        if row_height_match:
+            _set_tr_height(tr_pr, float(row_height_match.group(1)))
+
+        tcs = [tc for tc in doc_row._tr.tc_lst if not _is_vmerge_continuation(tc)]
+        html_cells = html_row.find_all(["th", "td"], recursive=False)
+        for tc, html_cell in zip(tcs, html_cells, strict=False):
+            styles = _parse_inline_style(str(html_cell.get("style") or ""))
+            bg_hex = _parse_color(styles.get("background-color"))
+            fg_hex = _parse_color(styles.get("color"))
+            edge_specs: dict[str, tuple[str, str, str]] = {}
+            uniform_spec = _parse_css_border_spec(styles.get("border"), theme)
+            if uniform_spec:
+                for edge in ("top", "left", "bottom", "right"):
+                    edge_specs[edge] = uniform_spec
+            for edge in ("top", "right", "bottom", "left"):
+                side_spec = _parse_css_border_spec(styles.get(f"border-{edge}"), theme)
+                if side_spec:
+                    edge_specs[edge] = side_spec
+            diag_down = _parse_css_border_spec(
+                str(html_cell.get("data-diagonal-down") or ""), theme
+            )
+            if diag_down and diag_down[0] != "nil":
+                edge_specs["tl2br"] = diag_down
+            diag_up = _parse_css_border_spec(
+                str(html_cell.get("data-diagonal-up") or ""), theme
+            )
+            if diag_up and diag_up[0] != "nil":
+                edge_specs["tr2bl"] = diag_up
+            jc_val = _CSS_TEXT_ALIGN_TO_JC.get(styles.get("text-align", "").lower())
+            valign_val = _CSS_VALIGN_TO_OOXML.get(styles.get("vertical-align", "").lower())
+            colspan = max(1, int(str(html_cell.get("colspan") or "1")))
+            is_cover_banner = (
+                html_cell.name == "th"
+                and not bg_hex
+                and colspan >= num_cols
+                and table_has_custom_bg
+            )
+
+            if bg_hex:
+                _set_tc_shading(tc, bg_hex)
+            elif is_cover_banner:
+                _set_tc_shading(tc, "ffffff")
+            elif html_cell.name == "th":
+                tc_pr = tc.tcPr
+                if tc_pr is None or tc_pr.find(qn("w:shd")) is None:
+                    _set_tc_shading(tc, header_bg)
+
+            if edge_specs:
+                _set_tc_border_specs(tc, edge_specs)
+            if valign_val:
+                _set_tc_valign(tc, valign_val)
+            elif html_cell.name == "th" and not is_cover_banner:
+                _set_tc_valign(tc, "center")
+
+            direct_html_ps = html_cell.find_all("p", recursive=False)
+            direct_doc_ps = tc.findall(qn("w:p"))
+            for p_idx, p_el in enumerate(direct_doc_ps):
+                p_jc = jc_val
+                if p_idx < len(direct_html_ps):
+                    p_styles = _parse_inline_style(str(direct_html_ps[p_idx].get("style") or ""))
+                    explicit_p_jc = _CSS_TEXT_ALIGN_TO_JC.get(
+                        p_styles.get("text-align", "").lower()
+                    )
+                    if explicit_p_jc:
+                        p_jc = explicit_p_jc
+                _set_compact_cell_paragraph(p_el, p_jc)
+                for r_el in p_el.findall(qn("w:r")):
+                    rpr = r_el.get_or_add_rPr()
+                    if (
+                        html_cell.name == "th"
+                        and not is_cover_banner
+                        and rpr.find(qn("w:b")) is None
+                    ):
+                        rpr.append(OxmlElement("w:b"))
+                    if fg_hex and rpr.find(qn("w:color")) is None:
+                        color_el = OxmlElement("w:color")
+                        color_el.set(qn("w:val"), fg_hex)
+                        rpr.append(color_el)
+                    if is_wide_table and rpr.find(qn("w:sz")) is None:
+                        for sz_tag in ("w:sz", "w:szCs"):
+                            sz_el = OxmlElement(sz_tag)
+                            sz_el.set(qn("w:val"), "18")
+                            rpr.append(sz_el)
+
+            # Recursively style nested tables inside this cell (e.g. cover-page
+            # header/title layout grids) without shifting top-level table pairing.
+            nested_doc_tbls = tc.findall(qn("w:tbl"))
+            nested_html_tbls = [
+                t for t in html_cell.find_all("table") if t.find_parent("table") is html_table
+            ]
+            if nested_doc_tbls and nested_html_tbls:
+                _set_tc_margins(tc, top=220, bottom=220, left=260, right=260)
+                inner_twips = max(2000, available_twips - 520)
+                for nested_tbl_el, nested_html_tbl in zip(
+                    nested_doc_tbls, nested_html_tbls, strict=False
+                ):
+                    _style_one_table(
+                        Table(nested_tbl_el, doc_table._parent),
+                        nested_html_tbl,
+                        theme,
+                        header_bg,
+                        available_twips=inner_twips,
+                    )
+
+
 def _apply_html_table_styles(document: Any, html: str, theme: dict[str, str]) -> None:
     """Restore table widths, cell padding, proportional column widths, cell
-    borders, and per-cell shading/text-color/alignment that Pandoc drops from
-    HTML tables.
-
-    Pandoc flattens nested ``<table>`` elements inside cells, so top-level Word
-    tables (``document.tables``) are paired strictly with top-level HTML
-    tables to prevent index drift across the rest of the document.
-    """
+    borders, row heights, nested tables, and per-cell shading/text-color/alignment
+    that Pandoc drops from HTML tables."""
     _clean_pandoc_table_style(document)
     doc_tables = list(document.tables)
     if not doc_tables:
@@ -1204,97 +1388,15 @@ def _apply_html_table_styles(document: Any, html: str, theme: dict[str, str]) ->
     html_tables = [t for t in soup.find_all("table") if t.find_parent("table") is None]
     header_bg = _parse_color(theme.get("table_header_bg")) or "f0f0f0"
 
-    for doc_table, html_table in zip(doc_tables, html_tables, strict=False):
-        num_cols = len(doc_table.columns)
-        is_wide_table = num_cols >= 7
-        col_widths = _extract_html_col_widths(html_table, num_cols)
-        if col_widths:
-            _apply_col_widths(doc_table, col_widths)
-
-        html_rows = [
-            tr for tr in html_table.find_all("tr") if tr.find_parent("table") is html_table
-        ]
-        table_has_custom_bg = any(
-            _parse_color(_parse_inline_style(str(c.get("style") or "")).get("background-color"))
-            for tr in html_rows
-            for c in tr.find_all(["th", "td"], recursive=False)
-        )
-
-        for doc_row, html_row in zip(doc_table.rows, html_rows, strict=False):
-            tr_pr = doc_row._tr.get_or_add_trPr()
-            if tr_pr.find(qn("w:cantSplit")) is None:
-                tr_pr.append(OxmlElement("w:cantSplit"))
-
-            tcs = [tc for tc in doc_row._tr.tc_lst if not _is_vmerge_continuation(tc)]
-            html_cells = html_row.find_all(["th", "td"], recursive=False)
-            for tc, html_cell in zip(tcs, html_cells, strict=False):
-                styles = _parse_inline_style(str(html_cell.get("style") or ""))
-                bg_hex = _parse_color(styles.get("background-color"))
-                fg_hex = _parse_color(styles.get("color"))
-                edge_specs: dict[str, tuple[str, str, str]] = {}
-                uniform_spec = _parse_css_border_spec(styles.get("border"), theme)
-                if uniform_spec:
-                    for edge in ("top", "left", "bottom", "right"):
-                        edge_specs[edge] = uniform_spec
-                for edge in ("top", "right", "bottom", "left"):
-                    side_spec = _parse_css_border_spec(styles.get(f"border-{edge}"), theme)
-                    if side_spec:
-                        edge_specs[edge] = side_spec
-                diag_down = _parse_css_border_spec(
-                    str(html_cell.get("data-diagonal-down") or ""), theme
-                )
-                if diag_down and diag_down[0] != "nil":
-                    edge_specs["tl2br"] = diag_down
-                diag_up = _parse_css_border_spec(
-                    str(html_cell.get("data-diagonal-up") or ""), theme
-                )
-                if diag_up and diag_up[0] != "nil":
-                    edge_specs["tr2bl"] = diag_up
-                jc_val = _CSS_TEXT_ALIGN_TO_JC.get(styles.get("text-align", "").lower())
-                valign_val = _CSS_VALIGN_TO_OOXML.get(styles.get("vertical-align", "").lower())
-                colspan = max(1, int(str(html_cell.get("colspan") or "1")))
-                is_cover_banner = (
-                    html_cell.name == "th"
-                    and not bg_hex
-                    and colspan >= num_cols
-                    and table_has_custom_bg
-                )
-
-                if bg_hex:
-                    _set_tc_shading(tc, bg_hex)
-                elif is_cover_banner:
-                    _set_tc_shading(tc, "ffffff")
-                elif html_cell.name == "th":
-                    tc_pr = tc.tcPr
-                    if tc_pr is None or tc_pr.find(qn("w:shd")) is None:
-                        _set_tc_shading(tc, header_bg)
-
-                if edge_specs:
-                    _set_tc_border_specs(tc, edge_specs)
-                if valign_val:
-                    _set_tc_valign(tc, valign_val)
-                elif html_cell.name == "th" and not is_cover_banner:
-                    _set_tc_valign(tc, "center")
-
-                for p_el in tc.findall(qn("w:p")):
-                    _set_compact_cell_paragraph(p_el, jc_val)
-                    for r_el in p_el.findall(qn("w:r")):
-                        rpr = r_el.get_or_add_rPr()
-                        if (
-                            html_cell.name == "th"
-                            and not is_cover_banner
-                            and rpr.find(qn("w:b")) is None
-                        ):
-                            rpr.append(OxmlElement("w:b"))
-                        if fg_hex and rpr.find(qn("w:color")) is None:
-                            color_el = OxmlElement("w:color")
-                            color_el.set(qn("w:val"), fg_hex)
-                            rpr.append(color_el)
-                        if is_wide_table and rpr.find(qn("w:sz")) is None:
-                            for sz_tag in ("w:sz", "w:szCs"):
-                                sz_el = OxmlElement(sz_tag)
-                                sz_el.set(qn("w:val"), "18")
-                                rpr.append(sz_el)
+    for idx, (doc_table, html_table) in enumerate(zip(doc_tables, html_tables, strict=False)):
+        _style_one_table(doc_table, html_table, theme, header_bg)
+        if (
+            idx == 0
+            and len(doc_table.columns) == 1
+            and html_table.find("table") is not None
+            and len(doc_tables) > 1
+        ):
+            _insert_page_break_after_table(doc_table)
 
 
 def _constrain_image_widths(document: Any) -> None:
@@ -1357,8 +1459,7 @@ async def html_to_docx(
             "--to=docx",
             f"--lua-filter={_LUA_FILTER}",
             f"--highlight-style={highlight_theme_path}",
-            "--metadata",
-            f"title={title}",
+            *([] if _html_starts_with_cover_frame(html) else ["--metadata", f"title={title}"]),
             "--standalone",
             "-o",
             str(output_path),

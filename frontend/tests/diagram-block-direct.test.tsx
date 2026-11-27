@@ -101,6 +101,29 @@ describe("diagram block directly", () => {
     expect(await screen.findByText("invalid syntax")).toBeInTheDocument();
   });
 
+  it("suppresses Mermaid error rendering and cleans up leftover temp nodes on failure", async () => {
+    mermaid.render.mockImplementationOnce(async (elementId: string) => {
+      const tempWrapper = document.createElement("div");
+      tempWrapper.id = `d${elementId}`;
+      tempWrapper.innerHTML = `<svg id="${elementId}">Syntax error in text</svg>`;
+      document.body.appendChild(tempWrapper);
+      throw new Error("No diagram type detected");
+    });
+
+    mount(true, { code: "" });
+
+    expect(await screen.findByText("No diagram type detected")).toBeInTheDocument();
+    expect(mermaid.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suppressErrorRendering: true,
+        themeVariables: expect.objectContaining({
+          edgeLabelBackground: "#ffffff",
+        }),
+      }),
+    );
+    expect(document.querySelector('[id^="dmermaid_"]')).toBeNull();
+  });
+
   it("uses the dark Mermaid palette when the workspace is dark", async () => {
     resolvedTheme = "dark";
     mount(false);

@@ -33,6 +33,10 @@ import {
   LinkFloatingToolbar,
   TableActionsMenu,
 } from "./editor/floating-menus";
+import {
+  ImageContextMenu,
+  type ImageContextMenuState,
+} from "./editor/image-context-menu";
 import { ImageLightbox } from "./editor/image-lightbox";
 import { RichTextToolbar } from "./editor/rich-text-toolbar";
 import { TABLE_COLUMN_HOVER_KEY } from "./editor/table-extensions";
@@ -480,6 +484,8 @@ export function RichTextContent({
     src: string;
     alt: string;
   } | null>(null);
+  const [imageContextMenu, setImageContextMenu] =
+    useState<ImageContextMenuState | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const normalizedContent = useMemo(
@@ -570,6 +576,23 @@ export function RichTextContent({
       }
     };
 
+    const handleContextMenu = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const image = target.closest("img");
+      if (image instanceof HTMLImageElement && image.src) {
+        event.preventDefault();
+        event.stopPropagation();
+        setImageContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          src: image.src,
+          alt: image.alt || "",
+        });
+      }
+    };
+
     const onOpenAttachmentModal = (event: Event) => {
       const customEvt = event as CustomEvent<{ attachmentId?: string }>;
       if (customEvt.detail?.attachmentId) {
@@ -583,6 +606,7 @@ export function RichTextContent({
 
     container.addEventListener("mousedown", handleMouseDown, true);
     container.addEventListener("click", handleClick, true);
+    container.addEventListener("contextmenu", handleContextMenu, true);
     return () => {
       window.removeEventListener(
         "wikihub:open-attachment-modal",
@@ -590,6 +614,7 @@ export function RichTextContent({
       );
       container.removeEventListener("mousedown", handleMouseDown, true);
       container.removeEventListener("click", handleClick, true);
+      container.removeEventListener("contextmenu", handleContextMenu, true);
     };
   }, [exportMode]);
 
@@ -611,6 +636,11 @@ export function RichTextContent({
             attachmentId={selectedAttachmentId}
             canEditOffice={canEditAttachments}
             onClose={() => setSelectedAttachmentId(null)}
+          />
+          <ImageContextMenu
+            menu={imageContextMenu}
+            onClose={() => setImageContextMenu(null)}
+            onZoom={(image) => setZoomImage(image)}
           />
           <ImageLightbox
             // Keying on the src makes each image (and the closed state) a

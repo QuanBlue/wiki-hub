@@ -856,16 +856,17 @@ function SlideMermaidDiagram({
   useEffect(() => {
     let active = true;
     async function render() {
+      const renderId = `wh-slide-mmd-${reactId}-${Date.now()}`;
       try {
         const mermaidModule = await import("mermaid");
         const mermaid = mermaidModule.default;
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
+          suppressErrorRendering: true,
           theme: theme.isDark ? "dark" : "default",
           fontFamily: theme.fontBody,
         });
-        const renderId = `wh-slide-mmd-${reactId}-${Date.now()}`;
         const { svg } = await mermaid.render(renderId, code);
         if (active) {
           setSvgHtml(svg);
@@ -874,6 +875,11 @@ function SlideMermaidDiagram({
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : "Diagram error");
+        }
+      } finally {
+        if (typeof document !== "undefined") {
+          document.getElementById(`d${renderId}`)?.remove();
+          document.getElementById(renderId)?.remove();
         }
       }
     }
