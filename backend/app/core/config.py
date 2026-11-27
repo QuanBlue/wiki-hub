@@ -198,8 +198,8 @@ class Settings(BaseSettings):
     frontend_internal_url: str = "http://frontend:3000"
     #: How long a minted export token stays valid. Short: it is a bearer
     #: capability for one page, not a session.
-    export_token_ttl_seconds: int = 120
-    export_render_timeout_seconds: int = 45
+    export_token_ttl_seconds: int = 300
+    export_render_timeout_seconds: int = 120
     export_max_concurrent_renders: int = 2
     #: Attachments are inlined as data: URIs into the export snapshot. Caps
     #: keep one huge attachment (or many) from ballooning the export or

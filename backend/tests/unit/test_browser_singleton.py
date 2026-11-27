@@ -181,3 +181,42 @@ async def test_render_page_bounds_concurrency_with_a_semaphore() -> None:
         assert entered_second
     finally:
         browser_module._render_slots = original_slots
+
+
+@pytest.mark.asyncio
+async def test_get_browser_relaunches_when_previous_browser_disconnected() -> None:
+    dead_browser = Mock()
+    dead_browser.is_connected.return_value = False
+    dead_browser.close = AsyncMock(side_effect=RuntimeError("already dead"))
+    old_playwright = Mock()
+    old_playwright.stop = AsyncMock(side_effect=RuntimeError("driver gone"))
+    set_browser(dead_browser)
+    browser_module._playwright = old_playwright
+
+    fresh_browser = Mock()
+    fresh_browser.is_connected.return_value = True
+    fresh_playwright = Mock()
+    fresh_playwright.chromium.launch = AsyncMock(return_value=fresh_browser)
+    fresh_playwright_cm = Mock()
+    fresh_playwright_cm.start = AsyncMock(return_value=fresh_playwright)
+
+    with patch("playwright.async_api.async_playwright", return_value=fresh_playwright_cm):
+        result = await get_browser()
+
+    assert result is fresh_browser
+    fresh_playwright.chromium.launch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_render_page_swallows_close_errors_when_renderer_crashes() -> None:
+    fake_page = Mock()
+    fake_page.close = AsyncMock(side_effect=RuntimeError("target closed"))
+    fake_context = Mock()
+    fake_context.new_page = AsyncMock(return_value=fake_page)
+    fake_context.close = AsyncMock(side_effect=RuntimeError("context closed"))
+    fake_browser = Mock()
+    fake_browser.new_context = AsyncMock(return_value=fake_context)
+    set_browser(fake_browser)
+
+    async with render_page() as page:
+        assert page is fake_page

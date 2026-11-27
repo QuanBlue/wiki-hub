@@ -19,6 +19,7 @@ from app.modules.pages.export_service import ExportFormat, ExportResult, ExportS
 
 class FakePage:
     def __init__(self) -> None:
+        self.set_default_timeout = Mock()
         self.goto = AsyncMock()
         self.wait_for_selector = AsyncMock()
         self.get_attribute = AsyncMock(return_value=None)

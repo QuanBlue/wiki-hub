@@ -128,6 +128,8 @@ class ExportService:
 
         try:
             async with self._page_renderer() as browser_page:
+                if hasattr(browser_page, "set_default_timeout"):
+                    browser_page.set_default_timeout(timeout_ms)
                 await browser_page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 await browser_page.wait_for_selector(_READY_OR_ERROR_SELECTOR, timeout=timeout_ms)
 

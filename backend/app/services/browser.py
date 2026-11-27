@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Final
 
 from app.core.config import settings
@@ -38,6 +38,13 @@ LAUNCH_ARGS: Final[list[str]] = [
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--disable-component-update",
+    "--no-first-run",
+    "--mute-audio",
     "--font-render-hinting=none",
     "--force-color-profile=srgb",
 ]
@@ -48,16 +55,27 @@ _lock = asyncio.Lock()
 _render_slots = asyncio.Semaphore(settings.export_max_concurrent_renders)
 
 
+def _browser_is_alive(browser: Browser | None) -> bool:
+    return browser is not None and bool(browser.is_connected())
+
+
 async def get_browser() -> Browser:
     """Return the process-wide headless Chromium instance, launching it on
-    first use."""
+    first use or relaunching automatically if the previous process died
+    (for example after an OOM kill on a low-memory host)."""
     global _playwright, _browser
-    if _browser is not None:
+    if _browser_is_alive(_browser):
+        assert _browser is not None
         return _browser
 
     async with _lock:
-        if _browser is not None:
+        if _browser_is_alive(_browser):
+            assert _browser is not None
             return _browser
+
+        if _browser is not None or _playwright is not None:
+            logger.warning("browser_disconnected_relaunching")
+            await close_browser()
 
         from playwright.async_api import async_playwright
 
@@ -71,12 +89,15 @@ async def get_browser() -> Browser:
 async def close_browser() -> None:
     """Stop the shared browser, if one was ever launched. Idempotent."""
     global _playwright, _browser
-    if _browser is not None:
-        await _browser.close()
-    if _playwright is not None:
-        await _playwright.stop()
+    browser, playwright = _browser, _playwright
     _browser = None
     _playwright = None
+    if browser is not None:
+        with suppress(Exception):
+            await browser.close()
+    if playwright is not None:
+        with suppress(Exception):
+            await playwright.stop()
 
 
 def set_browser(browser: Browser | None) -> None:
@@ -91,13 +112,15 @@ async def render_page() -> AsyncIterator[Page]:
 
     Bounded by a semaphore so a burst of exports cannot pile up unbounded
     Chromium contexts, and guaranteed to tear down its context (and the page
-    within it) on every path, success or failure.
+    within it) on every path, success or failure. Uses 1x scale factor so
+    low-memory servers do not allocate a 4x backing buffer for print/DOM
+    captures that do not need Retina rasterization.
     """
     async with _render_slots:
         browser = await get_browser()
         context = await browser.new_context(
-            viewport={"width": 1280, "height": 1600},
-            device_scale_factor=2,
+            viewport={"width": 1280, "height": 900},
+            device_scale_factor=1,
             color_scheme="light",
         )
         try:
@@ -105,6 +128,8 @@ async def render_page() -> AsyncIterator[Page]:
             try:
                 yield page
             finally:
-                await page.close()
+                with suppress(Exception):
+                    await page.close()
         finally:
-            await context.close()
+            with suppress(Exception):
+                await context.close()

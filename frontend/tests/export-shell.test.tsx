@@ -99,7 +99,7 @@ describe("ExportShell", () => {
     try {
       delete document.body.dataset.exportError;
       renderWithTheme(<ExportShell bundle={bundle({ page: { id: "1", title: "T", slug: "t", content: "" } })} />);
-      vi.advanceTimersByTime(20_001);
+      vi.advanceTimersByTime(90_001);
       expect(document.body.dataset.exportError).toBe("timeout");
     } finally {
       vi.useRealTimers();

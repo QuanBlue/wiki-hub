@@ -58,7 +58,7 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
       if (!signaledRef.current) {
         document.body.dataset.exportError = "timeout";
       }
-    }, 20_000);
+    }, 90_000);
     return () => window.clearTimeout(timer);
   }, []);
 
